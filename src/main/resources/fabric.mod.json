@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "bambooclientbot",
+  "version": "${version}",
+  "name": "BambooClientBot",
+  "description": "BambooClientBot Fabric bootstrap.",
+  "authors": [
+    "Foster"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.foster.bambooclientbot.BambooClientBot"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "minecraft": "1.21.11",
+    "java": ">=21"
+  }
+}
