@@ -1,6 +1,7 @@
 package com.foster.bambooclientbot.actions;
 
 import com.foster.bambooclientbot.state.LookedAtBlock;
+import com.foster.bambooclientbot.state.GotoTarget;
 
 public class ActionRequest {
     public enum ActionType {
@@ -25,7 +26,8 @@ public class ActionRequest {
         SET_AUTOSWING,
         SET_AUTOUSE,
         SET_AUTOSNEAK,
-        DISABLE_FARM_ACTIONS
+        DISABLE_FARM_ACTIONS,
+        GOTO_COORDINATES
     }
 
     public enum ActionStatus {
@@ -45,25 +47,27 @@ public class ActionRequest {
     private final String itemId;
     private final String itemLabel;
     private final int requestedCount;
+    private final GotoTarget gotoTarget;
 
     public ActionRequest(ActionType actionType, String actionData) {
-        this(actionType, actionData, 0, 0, null, "", "", 0);
+        this(actionType, actionData, 0, 0, null, "", "", 0, null);
     }
 
     public ActionRequest(ActionType actionType, String actionData, int durationTicks, int durationSeconds) {
-        this(actionType, actionData, durationTicks, durationSeconds, null, "", "", 0);
+        this(actionType, actionData, durationTicks, durationSeconds, null, "", "", 0, null);
     }
 
     public ActionRequest(ActionType actionType, LookedAtBlock targetedBlock) {
-        this(actionType, "", 0, 0, targetedBlock, "", "", 0);
+        this(actionType, "", 0, 0, targetedBlock, "", "", 0, null);
     }
 
     public ActionRequest(ActionType actionType, String actionData, int durationTicks, int durationSeconds, LookedAtBlock targetedBlock) {
-        this(actionType, actionData, durationTicks, durationSeconds, targetedBlock, "", "", 0);
+        this(actionType, actionData, durationTicks, durationSeconds, targetedBlock, "", "", 0, null);
     }
 
     private ActionRequest(ActionType actionType, String actionData, int durationTicks, int durationSeconds,
-                          LookedAtBlock targetedBlock, String itemId, String itemLabel, int requestedCount) {
+                          LookedAtBlock targetedBlock, String itemId, String itemLabel, int requestedCount,
+                          GotoTarget gotoTarget) {
         this.actionType = actionType;
         this.actionStatus = ActionStatus.IDLE;
         this.actionData = actionData;
@@ -73,22 +77,27 @@ public class ActionRequest {
         this.itemId = itemId;
         this.itemLabel = itemLabel;
         this.requestedCount = requestedCount;
+        this.gotoTarget = gotoTarget;
     }
 
     public static ActionRequest itemTransfer(ActionType actionType, String itemId, int requestedCount) {
-        return new ActionRequest(actionType, "", 0, 0, null, itemId, "", requestedCount);
+        return new ActionRequest(actionType, "", 0, 0, null, itemId, "", requestedCount, null);
     }
 
     public static ActionRequest itemQuery(ActionType actionType, String itemId, String itemLabel) {
-        return new ActionRequest(actionType, "", 0, 0, null, itemId, itemLabel, 0);
+        return new ActionRequest(actionType, "", 0, 0, null, itemId, itemLabel, 0, null);
     }
 
     public static ActionRequest itemQuery(ActionType actionType, String itemId, String itemLabel, int requestedCount) {
-        return new ActionRequest(actionType, "", 0, 0, null, itemId, itemLabel, requestedCount);
+        return new ActionRequest(actionType, "", 0, 0, null, itemId, itemLabel, requestedCount, null);
     }
 
     public static ActionRequest targetedItem(ActionType actionType, String targetPlayer, String itemId, String itemLabel, int requestedCount) {
-        return new ActionRequest(actionType, targetPlayer, 0, 0, null, itemId, itemLabel, requestedCount);
+        return new ActionRequest(actionType, targetPlayer, 0, 0, null, itemId, itemLabel, requestedCount, null);
+    }
+
+    public static ActionRequest gotoCoordinates(GotoTarget target) {
+        return new ActionRequest(ActionType.GOTO_COORDINATES, "", 0, 0, null, "", "", 0, target);
     }
 
     public ActionType actionType() {
@@ -129,5 +138,9 @@ public class ActionRequest {
 
     public int requestedCount() {
         return requestedCount;
+    }
+
+    public GotoTarget gotoTarget() {
+        return gotoTarget;
     }
 }

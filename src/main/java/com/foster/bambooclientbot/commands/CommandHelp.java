@@ -13,6 +13,7 @@ public final class CommandHelp {
             "back",
             "left",
             "right",
+            "goto <x> <y> <z>",
             "look at me",
             "approach me",
             "follow me",

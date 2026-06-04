@@ -4,6 +4,7 @@ import com.foster.bambooclientbot.BambooClientBot;
 import com.foster.bambooclientbot.commands.CommandRequest;
 import com.foster.bambooclientbot.commands.ItemResolver;
 import com.foster.bambooclientbot.state.BotState;
+import com.foster.bambooclientbot.state.GotoTarget;
 import com.mojang.authlib.GameProfile;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.MinecraftClient;
@@ -97,6 +98,18 @@ public final class ChatHandler {
             return new CommandRequest("follow", resolvePlayerArg(targetPlayer, senderName));
         }
 
+        if (command.startsWith("goto ")) {
+            return parseGoto(command.substring("goto ".length()));
+        }
+
+        if (command.startsWith("go to ")) {
+            return parseGoto(command.substring("go to ".length()));
+        }
+
+        if ("goto".equals(command) || "go to".equals(command)) {
+            return new CommandRequest("invalid_coordinates");
+        }
+
         if (command.startsWith("deposit ")) {
             return parseItemTransfer("deposit", command.substring("deposit ".length()));
         }
@@ -184,6 +197,28 @@ public final class ChatHandler {
             return CommandRequest.timedMovement(command, durationSeconds);
         } catch (NumberFormatException exception) {
             return new CommandRequest("invalid_duration");
+        }
+    }
+
+    private static CommandRequest parseGoto(String coordinateText) {
+        String[] parts = coordinateText.trim().split("\\s+");
+
+        if (parts.length != 3) {
+            return new CommandRequest("invalid_coordinates");
+        }
+
+        try {
+            double x = Double.parseDouble(parts[0]);
+            double y = Double.parseDouble(parts[1]);
+            double z = Double.parseDouble(parts[2]);
+
+            if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) {
+                return new CommandRequest("invalid_coordinates");
+            }
+
+            return CommandRequest.gotoCoordinates(new GotoTarget(x, y, z));
+        } catch (NumberFormatException exception) {
+            return new CommandRequest("invalid_coordinates");
         }
     }
 

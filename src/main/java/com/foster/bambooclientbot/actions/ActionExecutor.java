@@ -4,6 +4,8 @@ import com.foster.bambooclientbot.commands.ItemResolver;
 import com.foster.bambooclientbot.state.BotState;
 import com.foster.bambooclientbot.state.ContainerSnapshot;
 import com.foster.bambooclientbot.state.DropResult;
+import com.foster.bambooclientbot.state.GotoResult;
+import com.foster.bambooclientbot.state.GotoTarget;
 import com.foster.bambooclientbot.state.InventorySnapshot;
 import com.foster.bambooclientbot.state.LookedAtBlock;
 import com.foster.bambooclientbot.state.TransferResult;
@@ -35,6 +37,9 @@ public class ActionExecutor {
     private static final double FOLLOW_DISTANCE = 3.0;
     private static final double FOLLOW_SPRINT_ENABLE_DISTANCE = 6.0;
     private static final double FOLLOW_SPRINT_DISABLE_DISTANCE = 4.0;
+    private static final double GOTO_HORIZONTAL_ARRIVAL_DISTANCE = 1.5;
+    private static final double GOTO_VERTICAL_ARRIVAL_DISTANCE = 2.0;
+    private static final double GOTO_JUMP_TARGET_Y_DELTA = 0.5;
     private static final double FOLLOW_JUMP_TARGET_Y_DELTA = 0.5;
     private static final int FOLLOW_JUMP_COOLDOWN_TICKS = 8;
     private static final long AUTOSWING_INTERVAL_MILLIS = 1_000L;
@@ -47,6 +52,7 @@ public class ActionExecutor {
     private int timedMovementTicksRemaining;
     private ActionRequest activeApproach;
     private ActionRequest activeFollow;
+    private ActionRequest activeGoto;
     private int followJumpCooldownTicks;
 
     public ActionExecutor(BotState state) {
@@ -66,6 +72,7 @@ public class ActionExecutor {
 
         tickApproach(client);
         tickFollow(client);
+        tickGoto(client);
         tickTimedMovement(client);
         tickAutoSneak(client);
         tickAutoUse(client);
@@ -80,6 +87,7 @@ public class ActionExecutor {
             if (request.actionType() == ActionRequest.ActionType.STOP) {
                 activeApproach = null;
                 activeFollow = null;
+                cancelActiveGoto("goto_cancelled");
                 timedMovement = null;
                 timedMovementTicksRemaining = 0;
                 followJumpCooldownTicks = 0;
@@ -110,6 +118,8 @@ public class ActionExecutor {
                 startApproach(client, request);
             } else if (request.actionType() == ActionRequest.ActionType.FOLLOW_PLAYER) {
                 startFollow(client, request);
+            } else if (request.actionType() == ActionRequest.ActionType.GOTO_COORDINATES) {
+                startGoto(client, request);
             } else if (request.actionType() == ActionRequest.ActionType.INTERACT_TARGETED_BLOCK) {
                 interactTargetedBlock(client, request);
             } else if (request.actionType() == ActionRequest.ActionType.CLOSE_CURRENT_SCREEN) {
@@ -968,6 +978,41 @@ public class ActionExecutor {
         updateFollowSprint(client.options, player.distanceTo(target));
     }
 
+    private void tickGoto(MinecraftClient client) {
+        if (activeGoto == null) {
+            return;
+        }
+
+        GotoTarget target = activeGoto.gotoTarget();
+
+        if (client == null || client.player == null || client.options == null || target == null) {
+            failGoto(client, "movement_unavailable");
+            return;
+        }
+
+        ClientPlayerEntity player = client.player;
+        double horizontalDistance = horizontalDistance(player, target);
+        double verticalDifference = Math.abs(player.getY() - target.y());
+        state.setActiveGoto(target, horizontalDistance);
+
+        if (horizontalDistance <= GOTO_HORIZONTAL_ARRIVAL_DISTANCE
+                && verticalDifference <= GOTO_VERTICAL_ARRIVAL_DISTANCE) {
+            stop(client);
+            activeGoto.setStatus(ActionRequest.ActionStatus.COMPLETE);
+            state.setLastGotoResult(new GotoResult(target, "success", ""));
+            state.clearActiveGoto();
+            activeGoto = null;
+            return;
+        }
+
+        rotateToward(player, new Vec3d(target.x(), target.y(), target.z()));
+        tickFollowJumpCooldown();
+        clearDirectionalKeys(client.options);
+        client.options.forwardKey.setPressed(true);
+        updateGotoJump(client.options, player, target);
+        updateFollowSprint(client.options, horizontalDistance);
+    }
+
     private void tickTimedMovement(MinecraftClient client) {
         if (timedMovement == null) {
             return;
@@ -1000,6 +1045,7 @@ public class ActionExecutor {
 
         activeApproach = null;
         activeFollow = null;
+        cancelActiveGoto("goto_cancelled");
         followJumpCooldownTicks = 0;
         GameOptions options = client.options;
         clearDirectionalKeys(options);
@@ -1046,6 +1092,7 @@ public class ActionExecutor {
         timedMovement = null;
         timedMovementTicksRemaining = 0;
         activeFollow = null;
+        cancelActiveGoto("goto_cancelled");
         followJumpCooldownTicks = 0;
         clearDirectionalKeys(client.options);
         client.options.jumpKey.setPressed(false);
@@ -1076,6 +1123,7 @@ public class ActionExecutor {
         timedMovement = null;
         timedMovementTicksRemaining = 0;
         activeApproach = null;
+        cancelActiveGoto("goto_cancelled");
         followJumpCooldownTicks = 0;
         clearDirectionalKeys(client.options);
         client.options.sprintKey.setPressed(false);
@@ -1089,6 +1137,71 @@ public class ActionExecutor {
         state.setFollowJump(false);
         activeFollow = request;
         state.queueChatMessage("following " + request.actionData());
+    }
+
+    private void startGoto(MinecraftClient client, ActionRequest request) {
+        GotoTarget target = request.gotoTarget();
+
+        if (client == null || client.player == null || client.options == null || target == null) {
+            request.setStatus(ActionRequest.ActionStatus.FAILED);
+            state.setLastGotoResult(new GotoResult(target, "failed", "movement_unavailable"));
+            state.clearActiveGoto();
+            state.queueChatMessage("goto failed");
+            return;
+        }
+
+        timedMovement = null;
+        timedMovementTicksRemaining = 0;
+        activeApproach = null;
+        activeFollow = null;
+        cancelActiveGoto("goto_cancelled");
+        followJumpCooldownTicks = 0;
+
+        double horizontalDistance = horizontalDistance(client.player, target);
+        double verticalDifference = Math.abs(client.player.getY() - target.y());
+
+        if (horizontalDistance <= GOTO_HORIZONTAL_ARRIVAL_DISTANCE
+                && verticalDifference <= GOTO_VERTICAL_ARRIVAL_DISTANCE) {
+            stop(client);
+            request.setStatus(ActionRequest.ActionStatus.COMPLETE);
+            state.setLastGotoResult(new GotoResult(target, "success", ""));
+            state.clearActiveGoto();
+            state.queueChatMessage("arrived");
+            return;
+        }
+
+        clearDirectionalKeys(client.options);
+        client.options.jumpKey.setPressed(false);
+        state.setFollowJump(false);
+        rotateToward(client.player, new Vec3d(target.x(), target.y(), target.z()));
+        state.setActiveGoto(target, horizontalDistance);
+        activeGoto = request;
+        state.queueChatMessage("going to " + target.formatForChat());
+    }
+
+    private void failGoto(MinecraftClient client, String reason) {
+        GotoTarget target = activeGoto == null ? null : activeGoto.gotoTarget();
+
+        if (activeGoto != null) {
+            activeGoto.setStatus(ActionRequest.ActionStatus.FAILED);
+        }
+
+        stop(client);
+        state.setLastGotoResult(new GotoResult(target, "failed", reason));
+        state.clearActiveGoto();
+        activeGoto = null;
+    }
+
+    private void cancelActiveGoto(String reason) {
+        if (activeGoto == null) {
+            state.clearActiveGoto();
+            return;
+        }
+
+        activeGoto.setStatus(ActionRequest.ActionStatus.FAILED);
+        state.setLastGotoResult(new GotoResult(activeGoto.gotoTarget(), "failed", reason));
+        activeGoto = null;
+        state.clearActiveGoto();
     }
 
     private void stop(MinecraftClient client) {
@@ -1188,6 +1301,34 @@ public class ActionExecutor {
 
         options.jumpKey.setPressed(false);
         state.setFollowJump(false);
+    }
+
+    private void updateGotoJump(GameOptions options, ClientPlayerEntity player, GotoTarget target) {
+        if (!canFollowJump(player)) {
+            options.jumpKey.setPressed(false);
+            state.setFollowJump(false);
+            return;
+        }
+
+        boolean targetAbove = target.y() - player.getY() >= GOTO_JUMP_TARGET_Y_DELTA
+                && horizontalDistance(player, target) <= FOLLOW_DISTANCE + 2.0;
+        boolean blocked = player.horizontalCollision;
+
+        if ((targetAbove || blocked) && followJumpCooldownTicks <= 0) {
+            options.jumpKey.setPressed(true);
+            state.setFollowJump(true);
+            followJumpCooldownTicks = FOLLOW_JUMP_COOLDOWN_TICKS;
+            return;
+        }
+
+        options.jumpKey.setPressed(false);
+        state.setFollowJump(false);
+    }
+
+    private double horizontalDistance(ClientPlayerEntity player, GotoTarget target) {
+        double deltaX = target.x() - player.getX();
+        double deltaZ = target.z() - player.getZ();
+        return Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
     }
 
     private boolean canFollowJump(ClientPlayerEntity player) {

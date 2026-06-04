@@ -44,6 +44,8 @@ public class BrainLoop {
                 state.queueChatMessage("have failed");
             } else if ("invalid_drop".equals(request.command())) {
                 state.queueChatMessage("drop failed");
+            } else if ("invalid_coordinates".equals(request.command())) {
+                state.queueChatMessage("goto failed");
             } else if ("stop".equals(request.command())) {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.STOP, ""));
             } else if ("autoswing on".equals(request.command()) || "swing on".equals(request.command())) {
@@ -107,6 +109,8 @@ public class BrainLoop {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.APPROACH_PLAYER, request.targetPlayer()));
             } else if ("follow".equals(request.command())) {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.FOLLOW_PLAYER, request.targetPlayer()));
+            } else if ("goto".equals(request.command())) {
+                state.queueAction(ActionRequest.gotoCoordinates(request.gotoTarget()));
             } else if ("interact".equals(request.command()) || "use".equals(request.command()) || "open".equals(request.command())) {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.INTERACT_TARGETED_BLOCK, state.lookedAtBlock()));
             } else if ("close".equals(request.command()) || "close screen".equals(request.command()) || "close menu".equals(request.command())) {
