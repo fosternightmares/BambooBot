@@ -36,6 +36,10 @@ public record CommandRequest(String command, String targetPlayer, int durationTi
         return new CommandRequest("goto", "", 0, 0, "", "", 0, target);
     }
 
+    public static CommandRequest pathCoordinates(GotoTarget target) {
+        return new CommandRequest("path", "", 0, 0, "", "", 0, target);
+    }
+
     private static String compactItemId(String itemId) {
         if (itemId.startsWith("minecraft:")) {
             return itemId.substring("minecraft:".length());

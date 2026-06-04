@@ -110,6 +110,14 @@ public final class ChatHandler {
             return new CommandRequest("invalid_coordinates");
         }
 
+        if (command.startsWith("path ")) {
+            return parsePath(command.substring("path ".length()));
+        }
+
+        if ("path".equals(command)) {
+            return new CommandRequest("invalid_path_coordinates");
+        }
+
         if (command.startsWith("deposit ")) {
             return parseItemTransfer("deposit", command.substring("deposit ".length()));
         }
@@ -220,6 +228,16 @@ public final class ChatHandler {
         } catch (NumberFormatException exception) {
             return new CommandRequest("invalid_coordinates");
         }
+    }
+
+    private static CommandRequest parsePath(String coordinateText) {
+        CommandRequest request = parseGoto(coordinateText);
+
+        if (!"goto".equals(request.command())) {
+            return new CommandRequest("invalid_path_coordinates");
+        }
+
+        return CommandRequest.pathCoordinates(request.gotoTarget());
     }
 
     private static CommandRequest parseItemTransfer(String command, String transferText) {

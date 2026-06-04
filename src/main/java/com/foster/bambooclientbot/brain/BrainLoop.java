@@ -4,12 +4,15 @@ import com.foster.bambooclientbot.actions.ActionRequest;
 import com.foster.bambooclientbot.commands.CommandHelp;
 import com.foster.bambooclientbot.commands.CommandRequest;
 import com.foster.bambooclientbot.navigation.NavigationGrid;
+import com.foster.bambooclientbot.navigation.PathPlanResult;
+import com.foster.bambooclientbot.navigation.PathPlanner;
 import com.foster.bambooclientbot.sensors.PlayerSensors;
 import com.foster.bambooclientbot.sensors.WorldSensors;
 import com.foster.bambooclientbot.state.BotState;
 import com.foster.bambooclientbot.state.ContainerSnapshot;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.math.BlockPos;
+import java.util.Locale;
 
 public class BrainLoop {
     private static final int SNAPSHOT_DETAILS_MAX_LENGTH = 240;
@@ -18,6 +21,7 @@ public class BrainLoop {
     private final PlayerSensors playerSensors;
     private final WorldSensors worldSensors;
     private final NavigationGrid navigationGrid = new NavigationGrid();
+    private final PathPlanner pathPlanner = new PathPlanner(navigationGrid);
 
     public BrainLoop(BotState state, PlayerSensors playerSensors, WorldSensors worldSensors) {
         this.state = state;
@@ -51,6 +55,8 @@ public class BrainLoop {
                 state.queueChatMessage("drop failed");
             } else if ("invalid_coordinates".equals(request.command())) {
                 state.queueChatMessage("goto failed");
+            } else if ("invalid_path_coordinates".equals(request.command())) {
+                state.queueChatMessage("path not found");
             } else if ("stop".equals(request.command())) {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.STOP, ""));
             } else if ("autoswing on".equals(request.command()) || "swing on".equals(request.command())) {
@@ -116,6 +122,8 @@ public class BrainLoop {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.FOLLOW_PLAYER, request.targetPlayer()));
             } else if ("goto".equals(request.command())) {
                 state.queueAction(ActionRequest.gotoCoordinates(request.gotoTarget()));
+            } else if ("path".equals(request.command())) {
+                state.queueChatMessage(readPathPlan(client, request));
             } else if ("interact".equals(request.command()) || "use".equals(request.command()) || "open".equals(request.command())) {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.INTERACT_TARGETED_BLOCK, state.lookedAtBlock()));
             } else if ("close".equals(request.command()) || "close screen".equals(request.command()) || "close menu".equals(request.command())) {
@@ -206,5 +214,22 @@ public class BrainLoop {
                 + " east=" + navigationGrid.evaluate(client.world, current.east()).label()
                 + " south=" + navigationGrid.evaluate(client.world, current.south()).label()
                 + " west=" + navigationGrid.evaluate(client.world, current.west()).label();
+    }
+
+    private String readPathPlan(MinecraftClient client, CommandRequest request) {
+        if (client == null || client.player == null || client.world == null || request.gotoTarget() == null) {
+            return "path not found";
+        }
+
+        BlockPos start = client.player.getBlockPos();
+        BlockPos target = BlockPos.ofFloored(request.gotoTarget().x(), request.gotoTarget().y(), request.gotoTarget().z());
+        PathPlanResult result = pathPlanner.plan(client.world, start, target);
+
+        if (!result.found()) {
+            return "path not found";
+        }
+
+        return "path found nodes=" + result.nodes()
+                + " length=" + String.format(Locale.ROOT, "%.1f", result.length());
     }
 }

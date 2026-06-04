@@ -8,6 +8,7 @@ public final class CommandHelp {
             "status",
             "nearby",
             "nav check",
+            "path <x> <y> <z>",
             "help",
             "stop",
             "forward",
