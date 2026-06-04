@@ -145,61 +145,78 @@ public class ActionExecutor {
 
         if (client == null || client.player == null || client.interactionManager == null
                 || !(client.currentScreen instanceof HandledScreen<?> handledScreen)) {
-            failTransfer(request, operation, normalizedItemId, 0, "container_not_open");
+            failTransfer(request, operation, normalizedItemId, 0, true, 0, 0, "container_not_open");
             return;
         }
 
         ScreenHandler handler = handledScreen.getScreenHandler();
 
         if (!handler.getCursorStack().isEmpty()) {
-            failTransfer(request, operation, normalizedItemId, 0, "transfer_failed");
+            failTransfer(request, operation, normalizedItemId, 0, true, 0, 0, "transfer_failed");
             return;
         }
 
         List<Slot> sourceSlots = transferSlots(handler.slots, deposit);
         List<Slot> targetSlots = transferSlots(handler.slots, !deposit);
+        int sourceCountBefore = countMatchingItems(sourceSlots, normalizedItemId);
+        int targetCountBefore = countMatchingItems(targetSlots, normalizedItemId);
         int available = countMatchingItems(sourceSlots, normalizedItemId);
 
         if (available <= 0) {
-            failTransfer(request, operation, normalizedItemId, 0, "item_not_found");
+            failTransfer(request, operation, normalizedItemId, 0, true, 0, 0, "item_not_found");
             return;
         }
 
         int capacity = countTargetCapacity(targetSlots, normalizedItemId);
 
         if (capacity <= 0) {
-            failTransfer(request, operation, normalizedItemId, 0, "inventory_full");
+            failTransfer(request, operation, normalizedItemId, 0, true, 0, 0, transferFullReason(deposit));
             return;
         }
 
         int desiredCount = Math.min(request.requestedCount(), Math.min(available, capacity));
         int movedCount = moveExactCount(client, handler, sourceSlots, targetSlots, normalizedItemId, desiredCount);
+        int sourceCountAfter = countMatchingItems(sourceSlots, normalizedItemId);
+        int targetCountAfter = countMatchingItems(targetSlots, normalizedItemId);
+        int sourceDelta = sourceCountBefore - sourceCountAfter;
+        int targetDelta = targetCountAfter - targetCountBefore;
+        int actualMoved = Math.min(sourceDelta, targetDelta);
 
         if (movedCount <= 0) {
-            failTransfer(request, operation, normalizedItemId, 0, "transfer_failed");
+            failTransfer(request, operation, normalizedItemId, 0, true, movedCount, Math.max(0, actualMoved), "transfer_failed");
             return;
         }
 
         if (!handler.getCursorStack().isEmpty()) {
-            failTransfer(request, operation, normalizedItemId, movedCount, "transfer_failed");
+            failTransfer(request, operation, normalizedItemId, movedCount, false, movedCount, Math.max(0, actualMoved), "transfer_mismatch");
+            return;
+        }
+
+        if (sourceDelta != movedCount || targetDelta != movedCount) {
+            failTransfer(request, operation, normalizedItemId, movedCount, false, movedCount, Math.max(0, actualMoved), "transfer_mismatch");
             return;
         }
 
         String result = movedCount == request.requestedCount() ? "success" : "partial";
+        String reason = partialReason(movedCount, request.requestedCount(), available, capacity, deposit);
         request.setStatus(ActionRequest.ActionStatus.COMPLETE);
-        state.setLastActionResult(request.actionType().name(), result, "");
+        state.setLastActionResult(request.actionType().name(), result, reason);
         state.setLastTransferResult(new TransferResult(
                 operation,
                 normalizedItemId,
                 request.requestedCount(),
                 movedCount,
+                true,
+                movedCount,
+                movedCount,
                 result,
-                ""
+                reason
         ));
-        state.queueChatMessage("transferred " + movedCount + " " + compactItemId(normalizedItemId));
+        state.queueChatMessage("success".equals(result) ? "transfer verified" : "transfer partial");
     }
 
-    private void failTransfer(ActionRequest request, String operation, String itemId, int movedCount, String reason) {
+    private void failTransfer(ActionRequest request, String operation, String itemId, int movedCount,
+                              boolean verified, int expectedMoved, int actualMoved, String reason) {
         request.setStatus(ActionRequest.ActionStatus.FAILED);
         state.setLastActionResult(request.actionType().name(), "failed", reason);
         state.setLastTransferResult(new TransferResult(
@@ -207,10 +224,33 @@ public class ActionExecutor {
                 itemId,
                 request.requestedCount(),
                 movedCount,
+                verified,
+                expectedMoved,
+                actualMoved,
                 "failed",
                 reason
         ));
         state.queueChatMessage("transfer failed");
+    }
+
+    private String partialReason(int movedCount, int requestedCount, int available, int capacity, boolean deposit) {
+        if (movedCount >= requestedCount) {
+            return "";
+        }
+
+        if (available < requestedCount) {
+            return "insufficient_quantity";
+        }
+
+        if (capacity < requestedCount) {
+            return transferFullReason(deposit);
+        }
+
+        return "";
+    }
+
+    private String transferFullReason(boolean deposit) {
+        return deposit ? "container_full" : "inventory_full";
     }
 
     private List<Slot> transferSlots(List<Slot> slots, boolean playerInventorySlots) {
