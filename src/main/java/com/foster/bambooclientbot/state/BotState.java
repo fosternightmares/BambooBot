@@ -10,6 +10,10 @@ public class BotState {
     private final Queue<String> pendingChatMessages = new ArrayDeque<>();
     private final Queue<ActionRequest> pendingActions = new ArrayDeque<>();
     private LookedAtBlock lookedAtBlock;
+    private String activeAction = "none";
+    private String lastAction = "none";
+    private String lastActionResult = "none";
+    private String lastActionReason = "";
 
     public void queueCommand(CommandRequest request) {
         pendingCommands.add(request);
@@ -42,5 +46,35 @@ public class BotState {
 
     public LookedAtBlock lookedAtBlock() {
         return lookedAtBlock;
+    }
+
+    public void setActiveAction(String activeAction) {
+        this.activeAction = activeAction;
+    }
+
+    public void clearActiveAction() {
+        activeAction = "none";
+    }
+
+    public String activeAction() {
+        return activeAction;
+    }
+
+    public void setLastActionResult(String lastAction, String result, String reason) {
+        this.lastAction = lastAction;
+        this.lastActionResult = result;
+        this.lastActionReason = reason;
+    }
+
+    public String lastActionStatus() {
+        if ("none".equals(lastAction)) {
+            return "lastAction=none";
+        }
+
+        if (lastActionReason == null || lastActionReason.isBlank()) {
+            return "lastAction=" + lastAction + " result=" + lastActionResult;
+        }
+
+        return "lastAction=" + lastAction + " result=" + lastActionResult + " reason=" + lastActionReason;
     }
 }

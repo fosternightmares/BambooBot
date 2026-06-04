@@ -44,6 +44,8 @@ public class BrainLoop {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.APPROACH_PLAYER, request.targetPlayer()));
             } else if ("follow".equals(request.command())) {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.FOLLOW_PLAYER, request.targetPlayer()));
+            } else if ("interact".equals(request.command()) || "use".equals(request.command()) || "open".equals(request.command())) {
+                state.queueAction(new ActionRequest(ActionRequest.ActionType.INTERACT_TARGETED_BLOCK, state.lookedAtBlock()));
             }
         }
     }

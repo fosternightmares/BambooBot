@@ -9,6 +9,7 @@ import net.minecraft.registry.Registries;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
 
 public class LookingAtBlockSensor {
     public void update(MinecraftClient client, BotState state) {
@@ -31,6 +32,7 @@ public class LookingAtBlockSensor {
         }
 
         ClientPlayerEntity player = client.player;
+        Vec3d hitPos = hitResult.getPos();
         double distance = Math.sqrt(hitResult.squaredDistanceTo(player));
         String blockId = Registries.BLOCK.getId(blockState.getBlock()).toString();
         state.setLookedAtBlock(new LookedAtBlock(
@@ -39,7 +41,10 @@ public class LookingAtBlockSensor {
                 pos.getY(),
                 pos.getZ(),
                 hitResult.getSide().asString(),
-                distance
+                distance,
+                hitPos.x,
+                hitPos.y,
+                hitPos.z
         ));
     }
 }

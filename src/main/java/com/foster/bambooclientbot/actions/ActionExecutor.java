@@ -1,12 +1,19 @@
 package com.foster.bambooclientbot.actions;
 
 import com.foster.bambooclientbot.state.BotState;
+import com.foster.bambooclientbot.state.LookedAtBlock;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.option.GameOptions;
 import net.minecraft.client.option.KeyBinding;
+import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
+import java.util.Locale;
 
 public class ActionExecutor {
     private static final double LOOK_AT_RANGE = 32.0;
@@ -40,6 +47,7 @@ public class ActionExecutor {
 
     private void executeAction(MinecraftClient client, ActionRequest request) {
         request.setStatus(ActionRequest.ActionStatus.RUNNING);
+        state.setActiveAction(request.actionType().name());
 
         try {
             if (request.actionType() == ActionRequest.ActionType.STOP) {
@@ -70,9 +78,57 @@ public class ActionExecutor {
                 startApproach(client, request);
             } else if (request.actionType() == ActionRequest.ActionType.FOLLOW_PLAYER) {
                 startFollow(client, request);
+            } else if (request.actionType() == ActionRequest.ActionType.INTERACT_TARGETED_BLOCK) {
+                interactTargetedBlock(client, request);
             }
         } catch (Exception exception) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
+            state.setLastActionResult(request.actionType().name(), "failed", "exception");
+            state.queueChatMessage("action failed");
+        } finally {
+            state.clearActiveAction();
+        }
+    }
+
+    private void interactTargetedBlock(MinecraftClient client, ActionRequest request) {
+        if (client == null || client.player == null || client.world == null || client.interactionManager == null) {
+            request.setStatus(ActionRequest.ActionStatus.FAILED);
+            state.setLastActionResult(request.actionType().name(), "failed", "client_unavailable");
+            state.queueChatMessage("action failed");
+            return;
+        }
+
+        LookedAtBlock target = request.targetedBlock();
+
+        if (target == null) {
+            request.setStatus(ActionRequest.ActionStatus.FAILED);
+            state.setLastActionResult(request.actionType().name(), "failed", "no_target_block");
+            state.queueChatMessage("action failed");
+            return;
+        }
+
+        BlockPos pos = new BlockPos(target.x(), target.y(), target.z());
+
+        if (client.world.getBlockState(pos).isAir()) {
+            request.setStatus(ActionRequest.ActionStatus.FAILED);
+            state.setLastActionResult(request.actionType().name(), "failed", "no_target_block");
+            state.queueChatMessage("action failed");
+            return;
+        }
+
+        Direction side = Direction.valueOf(target.side().toUpperCase(Locale.ROOT));
+        Vec3d hitPos = new Vec3d(target.hitX(), target.hitY(), target.hitZ());
+        BlockHitResult hitResult = new BlockHitResult(hitPos, side, pos, false);
+        ActionResult result = client.interactionManager.interactBlock(client.player, Hand.MAIN_HAND, hitResult);
+
+        if (result.isAccepted()) {
+            client.player.swingHand(Hand.MAIN_HAND);
+            request.setStatus(ActionRequest.ActionStatus.COMPLETE);
+            state.setLastActionResult(request.actionType().name(), "success", "");
+            state.queueChatMessage("interacted");
+        } else {
+            request.setStatus(ActionRequest.ActionStatus.FAILED);
+            state.setLastActionResult(request.actionType().name(), "failed", "not_accepted");
             state.queueChatMessage("action failed");
         }
     }
