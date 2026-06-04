@@ -1,5 +1,7 @@
 package com.foster.bambooclientbot.sensors;
 
+import com.foster.bambooclientbot.state.BotState;
+import com.foster.bambooclientbot.state.LookedAtBlock;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.item.ItemStack;
@@ -8,7 +10,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
 public class PlayerSensors {
-    public String readStatus(MinecraftClient client) {
+    public String readStatus(MinecraftClient client, BotState state) {
         if (client == null || client.player == null || client.world == null) {
             return "status unavailable";
         }
@@ -23,7 +25,18 @@ public class PlayerSensors {
                 + " dim=" + dimension
                 + " hp=" + player.getHealth()
                 + " food=" + player.getHungerManager().getFoodLevel()
-                + " held=" + heldItem;
+                + " held=" + heldItem
+                + " " + lookingAtBlockStatus(state);
+    }
+
+    private String lookingAtBlockStatus(BotState state) {
+        LookedAtBlock lookedAtBlock = state.lookedAtBlock();
+
+        if (lookedAtBlock == null) {
+            return "lookingAtBlock=none";
+        }
+
+        return lookedAtBlock.format();
     }
 
     private String heldItemName(ItemStack stack) {

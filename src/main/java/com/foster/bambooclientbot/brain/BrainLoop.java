@@ -23,7 +23,7 @@ public class BrainLoop {
 
         while ((request = state.pollCommand()) != null) {
             if ("status".equals(request.command())) {
-                state.queueChatMessage(playerSensors.readStatus(client));
+                state.queueChatMessage(playerSensors.readStatus(client, state));
             } else if ("nearby".equals(request.command())) {
                 state.queueChatMessage(worldSensors.readNearby(client));
             } else if ("invalid_duration".equals(request.command())) {

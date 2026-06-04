@@ -9,6 +9,7 @@ public class BotState {
     private final Queue<CommandRequest> pendingCommands = new ArrayDeque<>();
     private final Queue<String> pendingChatMessages = new ArrayDeque<>();
     private final Queue<ActionRequest> pendingActions = new ArrayDeque<>();
+    private LookedAtBlock lookedAtBlock;
 
     public void queueCommand(CommandRequest request) {
         pendingCommands.add(request);
@@ -33,5 +34,13 @@ public class BotState {
 
     public ActionRequest pollAction() {
         return pendingActions.poll();
+    }
+
+    public void setLookedAtBlock(LookedAtBlock lookedAtBlock) {
+        this.lookedAtBlock = lookedAtBlock;
+    }
+
+    public LookedAtBlock lookedAtBlock() {
+        return lookedAtBlock;
     }
 }
