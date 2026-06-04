@@ -18,6 +18,8 @@ public final class CommandHelp {
             "follow me",
             "autoswing on",
             "autoswing off",
+            "autouse on",
+            "autouse off",
             "open",
             "close",
             "snapshot",

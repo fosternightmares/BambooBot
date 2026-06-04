@@ -50,6 +50,10 @@ public class BrainLoop {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.SET_AUTOSWING, "on"));
             } else if ("autoswing off".equals(request.command()) || "swing off".equals(request.command())) {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.SET_AUTOSWING, "off"));
+            } else if ("autouse on".equals(request.command()) || "use on".equals(request.command())) {
+                state.queueAction(new ActionRequest(ActionRequest.ActionType.SET_AUTOUSE, "on"));
+            } else if ("autouse off".equals(request.command()) || "use off".equals(request.command())) {
+                state.queueAction(new ActionRequest(ActionRequest.ActionType.SET_AUTOUSE, "off"));
             } else if ("deposit".equals(request.command())) {
                 state.queueAction(ActionRequest.itemTransfer(
                         ActionRequest.ActionType.DEPOSIT_ITEM,

@@ -58,6 +58,7 @@ public class ActionExecutor {
 
         if (request != null) {
             executeAction(client, request);
+            tickAutoUse(client);
             tickAutoSwing(client);
             return;
         }
@@ -65,6 +66,7 @@ public class ActionExecutor {
         tickApproach(client);
         tickFollow(client);
         tickTimedMovement(client);
+        tickAutoUse(client);
         tickAutoSwing(client);
     }
 
@@ -81,6 +83,7 @@ public class ActionExecutor {
                 followJumpCooldownTicks = 0;
                 state.setAutoSwing(false);
                 state.setLastSwingTimeMillis(0L);
+                state.setAutoUse(false);
                 stop(client);
                 request.setStatus(ActionRequest.ActionStatus.COMPLETE);
                 state.queueChatMessage("stopped");
@@ -126,6 +129,8 @@ public class ActionExecutor {
                 dropItem(client, request);
             } else if (request.actionType() == ActionRequest.ActionType.SET_AUTOSWING) {
                 setAutoSwing(request);
+            } else if (request.actionType() == ActionRequest.ActionType.SET_AUTOUSE) {
+                setAutoUse(client, request);
             }
         } catch (Exception exception) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
@@ -175,6 +180,19 @@ public class ActionExecutor {
         request.setStatus(ActionRequest.ActionStatus.COMPLETE);
         state.setLastActionResult(request.actionType().name(), enabled ? "enabled" : "disabled", "");
         state.queueChatMessage(enabled ? "autoswing enabled" : "autoswing disabled");
+    }
+
+    private void setAutoUse(MinecraftClient client, ActionRequest request) {
+        boolean enabled = "on".equals(request.actionData());
+        state.setAutoUse(enabled);
+
+        if (client != null && client.options != null) {
+            client.options.useKey.setPressed(enabled);
+        }
+
+        request.setStatus(ActionRequest.ActionStatus.COMPLETE);
+        state.setLastActionResult(request.actionType().name(), enabled ? "enabled" : "disabled", "");
+        state.queueChatMessage(enabled ? "autouse enabled" : "autouse disabled");
     }
 
     private void captureInventorySnapshot(MinecraftClient client, ActionRequest request, boolean includeDetails) {
@@ -1051,6 +1069,19 @@ public class ActionExecutor {
         options.sprintKey.setPressed(false);
         options.attackKey.setPressed(false);
         options.useKey.setPressed(false);
+    }
+
+    private void tickAutoUse(MinecraftClient client) {
+        if (!state.autoUse()) {
+            return;
+        }
+
+        if (client == null || client.options == null) {
+            state.setAutoUse(false);
+            return;
+        }
+
+        client.options.useKey.setPressed(true);
     }
 
     private void tickAutoSwing(MinecraftClient client) {

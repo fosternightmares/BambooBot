@@ -22,6 +22,7 @@ public class BotState {
     private boolean followJump;
     private boolean autoSwing;
     private long lastSwingTimeMillis;
+    private boolean autoUse;
 
     public void queueCommand(CommandRequest request) {
         pendingCommands.add(request);
@@ -156,5 +157,13 @@ public class BotState {
 
     public long lastSwingTimeMillis() {
         return lastSwingTimeMillis;
+    }
+
+    public void setAutoUse(boolean autoUse) {
+        this.autoUse = autoUse;
+    }
+
+    public boolean autoUse() {
+        return autoUse;
     }
 }
