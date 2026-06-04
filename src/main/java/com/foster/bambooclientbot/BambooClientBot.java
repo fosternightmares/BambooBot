@@ -3,6 +3,7 @@ package com.foster.bambooclientbot;
 import com.foster.bambooclientbot.brain.BrainLoop;
 import com.foster.bambooclientbot.chat.ChatActionExecutor;
 import com.foster.bambooclientbot.chat.ChatHandler;
+import com.foster.bambooclientbot.sensors.PlayerSensors;
 import com.foster.bambooclientbot.state.BotState;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -16,12 +17,12 @@ public class BambooClientBot implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         BotState state = new BotState();
-        BrainLoop brainLoop = new BrainLoop(state);
+        BrainLoop brainLoop = new BrainLoop(state, new PlayerSensors());
         ChatActionExecutor chatActionExecutor = new ChatActionExecutor(state);
 
         ChatHandler.register(state);
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            brainLoop.tick();
+            brainLoop.tick(client);
             chatActionExecutor.tick(client);
         });
 
