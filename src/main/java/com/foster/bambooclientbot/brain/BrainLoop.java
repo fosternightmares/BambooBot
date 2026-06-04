@@ -1,5 +1,6 @@
 package com.foster.bambooclientbot.brain;
 
+import com.foster.bambooclientbot.actions.ActionRequest;
 import com.foster.bambooclientbot.commands.CommandRequest;
 import com.foster.bambooclientbot.sensors.PlayerSensors;
 import com.foster.bambooclientbot.sensors.WorldSensors;
@@ -25,6 +26,8 @@ public class BrainLoop {
                 state.queueChatMessage(playerSensors.readStatus(client));
             } else if ("nearby".equals(request.command())) {
                 state.queueChatMessage(worldSensors.readNearby(client));
+            } else if ("stop".equals(request.command())) {
+                state.queueAction(new ActionRequest(ActionRequest.ActionType.STOP, ""));
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.foster.bambooclientbot;
 
+import com.foster.bambooclientbot.actions.ActionExecutor;
 import com.foster.bambooclientbot.brain.BrainLoop;
 import com.foster.bambooclientbot.chat.ChatActionExecutor;
 import com.foster.bambooclientbot.chat.ChatHandler;
@@ -19,11 +20,13 @@ public class BambooClientBot implements ClientModInitializer {
     public void onInitializeClient() {
         BotState state = new BotState();
         BrainLoop brainLoop = new BrainLoop(state, new PlayerSensors(), new WorldSensors());
+        ActionExecutor actionExecutor = new ActionExecutor(state);
         ChatActionExecutor chatActionExecutor = new ChatActionExecutor(state);
 
         ChatHandler.register(state);
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             brainLoop.tick(client);
+            actionExecutor.tick(client);
             chatActionExecutor.tick(client);
         });
 

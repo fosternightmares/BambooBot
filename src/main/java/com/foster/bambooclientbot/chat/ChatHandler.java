@@ -14,7 +14,7 @@ public final class ChatHandler {
 
     public static void register(BotState state) {
         ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) -> {
-            String botName = MinecraftClient.getInstance().getSession().getUsername();
+            String botName = botName(MinecraftClient.getInstance());
             String command = parseCommand(messageContent(message, signedMessage), botName);
 
             if (command == null) {
@@ -24,6 +24,14 @@ public final class ChatHandler {
             state.queueCommand(new CommandRequest(command));
             BambooClientBot.LOGGER.info("[BambooBot] Command received: {}", command);
         });
+    }
+
+    private static String botName(MinecraftClient client) {
+        if (client.player != null) {
+            return client.player.getGameProfile().name();
+        }
+
+        return client.getSession().getUsername();
     }
 
     private static String messageContent(Text message, SignedMessage signedMessage) {
