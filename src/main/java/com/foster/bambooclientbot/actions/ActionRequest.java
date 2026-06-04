@@ -23,7 +23,8 @@ public class ActionRequest {
         HAVE_ITEM,
         DROP_ITEM,
         SET_AUTOSWING,
-        SET_AUTOUSE
+        SET_AUTOUSE,
+        SET_AUTOSNEAK
     }
 
     public enum ActionStatus {

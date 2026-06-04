@@ -20,6 +20,8 @@ public final class CommandHelp {
             "autoswing off",
             "autouse on",
             "autouse off",
+            "autosneak on",
+            "autosneak off",
             "open",
             "close",
             "snapshot",

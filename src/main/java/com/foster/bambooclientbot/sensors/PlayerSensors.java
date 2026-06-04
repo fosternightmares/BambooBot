@@ -36,6 +36,7 @@ public class PlayerSensors {
                 + " followJump=" + state.followJump()
                 + " autoSwing=" + state.autoSwing()
                 + " autoUse=" + state.autoUse()
+                + " autoSneak=" + state.autoSneak()
                 + " " + state.lastActionStatus()
                 + " " + state.lastTransferStatus()
                 + " " + state.lastDropStatus();

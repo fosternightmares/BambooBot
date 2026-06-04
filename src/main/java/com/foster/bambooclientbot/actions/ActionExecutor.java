@@ -58,6 +58,7 @@ public class ActionExecutor {
 
         if (request != null) {
             executeAction(client, request);
+            tickAutoSneak(client);
             tickAutoUse(client);
             tickAutoSwing(client);
             return;
@@ -66,6 +67,7 @@ public class ActionExecutor {
         tickApproach(client);
         tickFollow(client);
         tickTimedMovement(client);
+        tickAutoSneak(client);
         tickAutoUse(client);
         tickAutoSwing(client);
     }
@@ -84,6 +86,7 @@ public class ActionExecutor {
                 state.setAutoSwing(false);
                 state.setLastSwingTimeMillis(0L);
                 state.setAutoUse(false);
+                state.setAutoSneak(false);
                 stop(client);
                 request.setStatus(ActionRequest.ActionStatus.COMPLETE);
                 state.queueChatMessage("stopped");
@@ -131,6 +134,8 @@ public class ActionExecutor {
                 setAutoSwing(request);
             } else if (request.actionType() == ActionRequest.ActionType.SET_AUTOUSE) {
                 setAutoUse(client, request);
+            } else if (request.actionType() == ActionRequest.ActionType.SET_AUTOSNEAK) {
+                setAutoSneak(client, request);
             }
         } catch (Exception exception) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
@@ -193,6 +198,19 @@ public class ActionExecutor {
         request.setStatus(ActionRequest.ActionStatus.COMPLETE);
         state.setLastActionResult(request.actionType().name(), enabled ? "enabled" : "disabled", "");
         state.queueChatMessage(enabled ? "autouse enabled" : "autouse disabled");
+    }
+
+    private void setAutoSneak(MinecraftClient client, ActionRequest request) {
+        boolean enabled = "on".equals(request.actionData());
+        state.setAutoSneak(enabled);
+
+        if (client != null && client.options != null) {
+            client.options.sneakKey.setPressed(enabled);
+        }
+
+        request.setStatus(ActionRequest.ActionStatus.COMPLETE);
+        state.setLastActionResult(request.actionType().name(), enabled ? "enabled" : "disabled", "");
+        state.queueChatMessage(enabled ? "autosneak enabled" : "autosneak disabled");
     }
 
     private void captureInventorySnapshot(MinecraftClient client, ActionRequest request, boolean includeDetails) {
@@ -1082,6 +1100,19 @@ public class ActionExecutor {
         }
 
         client.options.useKey.setPressed(true);
+    }
+
+    private void tickAutoSneak(MinecraftClient client) {
+        if (!state.autoSneak()) {
+            return;
+        }
+
+        if (client == null || client.options == null) {
+            state.setAutoSneak(false);
+            return;
+        }
+
+        client.options.sneakKey.setPressed(true);
     }
 
     private void tickAutoSwing(MinecraftClient client) {

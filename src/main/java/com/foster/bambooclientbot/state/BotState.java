@@ -23,6 +23,7 @@ public class BotState {
     private boolean autoSwing;
     private long lastSwingTimeMillis;
     private boolean autoUse;
+    private boolean autoSneak;
 
     public void queueCommand(CommandRequest request) {
         pendingCommands.add(request);
@@ -165,5 +166,13 @@ public class BotState {
 
     public boolean autoUse() {
         return autoUse;
+    }
+
+    public void setAutoSneak(boolean autoSneak) {
+        this.autoSneak = autoSneak;
+    }
+
+    public boolean autoSneak() {
+        return autoSneak;
     }
 }
