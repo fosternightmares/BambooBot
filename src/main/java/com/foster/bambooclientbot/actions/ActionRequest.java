@@ -12,7 +12,8 @@ public class ActionRequest {
         LOOK_AT_PLAYER,
         APPROACH_PLAYER,
         FOLLOW_PLAYER,
-        INTERACT_TARGETED_BLOCK
+        INTERACT_TARGETED_BLOCK,
+        CLOSE_CURRENT_SCREEN
     }
 
     public enum ActionStatus {

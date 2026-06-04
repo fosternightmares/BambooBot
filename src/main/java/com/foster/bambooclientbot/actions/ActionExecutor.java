@@ -80,6 +80,8 @@ public class ActionExecutor {
                 startFollow(client, request);
             } else if (request.actionType() == ActionRequest.ActionType.INTERACT_TARGETED_BLOCK) {
                 interactTargetedBlock(client, request);
+            } else if (request.actionType() == ActionRequest.ActionType.CLOSE_CURRENT_SCREEN) {
+                closeCurrentScreen(client, request);
             }
         } catch (Exception exception) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
@@ -131,6 +133,27 @@ public class ActionExecutor {
             state.setLastActionResult(request.actionType().name(), "failed", "not_accepted");
             state.queueChatMessage("action failed");
         }
+    }
+
+    private void closeCurrentScreen(MinecraftClient client, ActionRequest request) {
+        if (client == null || client.player == null) {
+            request.setStatus(ActionRequest.ActionStatus.FAILED);
+            state.setLastActionResult(request.actionType().name(), "failed", "client_unavailable");
+            state.queueChatMessage("action failed");
+            return;
+        }
+
+        if (client.currentScreen == null) {
+            request.setStatus(ActionRequest.ActionStatus.FAILED);
+            state.setLastActionResult(request.actionType().name(), "failed", "no_screen_open");
+            state.queueChatMessage("nothing_to_close");
+            return;
+        }
+
+        client.player.closeScreen();
+        request.setStatus(ActionRequest.ActionStatus.COMPLETE);
+        state.setLastActionResult(request.actionType().name(), "success", "");
+        state.queueChatMessage("closed");
     }
 
     private void tickApproach(MinecraftClient client) {
