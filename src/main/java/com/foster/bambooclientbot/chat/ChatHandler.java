@@ -121,6 +121,14 @@ public final class ChatHandler {
             return new CommandRequest("invalid_count_item");
         }
 
+        if (command.startsWith("have ")) {
+            return parseHaveItem(command.substring("have ".length()));
+        }
+
+        if ("have".equals(command)) {
+            return new CommandRequest("invalid_have");
+        }
+
         String[] parts = command.split("\\s+");
 
         if (parts.length > 1 && isMovementCommand(parts[0])) {
@@ -200,5 +208,41 @@ public final class ChatHandler {
         }
 
         return CommandRequest.itemQuery("count", itemId, ItemResolver.displayItemArg(itemText));
+    }
+
+    private static CommandRequest parseHaveItem(String itemText) {
+        String trimmed = itemText.trim();
+
+        if (trimmed.isBlank()) {
+            return new CommandRequest("invalid_have");
+        }
+
+        int requestedCount = 1;
+        String rawItemText = trimmed;
+        int countStart = trimmed.lastIndexOf(' ');
+
+        if (countStart > 0 && countStart < trimmed.length() - 1) {
+            String possibleCount = trimmed.substring(countStart + 1);
+
+            try {
+                requestedCount = Integer.parseInt(possibleCount);
+
+                if (requestedCount <= 0) {
+                    return new CommandRequest("invalid_have");
+                }
+
+                rawItemText = trimmed.substring(0, countStart);
+            } catch (NumberFormatException exception) {
+                rawItemText = trimmed;
+            }
+        }
+
+        String itemId = ItemResolver.resolveItemArg(rawItemText);
+
+        if (itemId.isBlank()) {
+            return new CommandRequest("invalid_have");
+        }
+
+        return CommandRequest.itemQuery("have", itemId, ItemResolver.displayItemArg(rawItemText), requestedCount);
     }
 }

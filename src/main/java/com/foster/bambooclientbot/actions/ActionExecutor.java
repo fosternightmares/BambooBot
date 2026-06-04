@@ -110,6 +110,8 @@ public class ActionExecutor {
                 captureInventorySnapshot(client, request, true);
             } else if (request.actionType() == ActionRequest.ActionType.COUNT_ITEM) {
                 countItem(client, request);
+            } else if (request.actionType() == ActionRequest.ActionType.HAVE_ITEM) {
+                haveItem(client, request);
             }
         } catch (Exception exception) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
@@ -200,13 +202,52 @@ public class ActionExecutor {
     }
 
     private void countItem(MinecraftClient client, ActionRequest request) {
+        InventorySnapshot snapshot = snapshotForItemQuery(client, request, "count failed");
+
+        if (snapshot == null) {
+            return;
+        }
+
+        String itemId = normalizeItemId(request.itemId());
+        int count = countSnapshotItem(snapshot, itemId);
+        request.setStatus(ActionRequest.ActionStatus.COMPLETE);
+        state.setLastActionResult(request.actionType().name(), "success", "");
+        state.queueChatMessage(countItemLabel(request, itemId) + " x" + count);
+    }
+
+    private void haveItem(MinecraftClient client, ActionRequest request) {
+        if (request.requestedCount() <= 0) {
+            request.setStatus(ActionRequest.ActionStatus.FAILED);
+            state.setLastActionResult(request.actionType().name(), "failed", "invalid_count");
+            state.queueChatMessage("have failed");
+            return;
+        }
+
+        InventorySnapshot snapshot = snapshotForItemQuery(client, request, "have failed");
+
+        if (snapshot == null) {
+            return;
+        }
+
+        String itemId = normalizeItemId(request.itemId());
+        int count = countSnapshotItem(snapshot, itemId);
+        String result = count >= request.requestedCount() ? "yes" : "no";
+        request.setStatus(ActionRequest.ActionStatus.COMPLETE);
+        state.setLastActionResult(request.actionType().name(), "success", "");
+        state.queueChatMessage("have " + countItemLabel(request, itemId)
+                + " " + result
+                + " count=" + count
+                + " requested=" + request.requestedCount());
+    }
+
+    private InventorySnapshot snapshotForItemQuery(MinecraftClient client, ActionRequest request, String failureMessage) {
         String itemId = normalizeItemId(request.itemId());
 
         if (itemId.isBlank()) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
             state.setLastActionResult(request.actionType().name(), "failed", "invalid_item");
-            state.queueChatMessage("count failed");
-            return;
+            state.queueChatMessage(failureMessage);
+            return null;
         }
 
         InventorySnapshot snapshot = state.inventorySnapshot();
@@ -217,17 +258,14 @@ public class ActionExecutor {
             if (snapshot == null) {
                 request.setStatus(ActionRequest.ActionStatus.FAILED);
                 state.setLastActionResult(request.actionType().name(), "failed", "inventory_unavailable");
-                state.queueChatMessage("count failed");
-                return;
+                state.queueChatMessage(failureMessage);
+                return null;
             }
 
             state.setInventorySnapshot(snapshot);
         }
 
-        int count = countSnapshotItem(snapshot, itemId);
-        request.setStatus(ActionRequest.ActionStatus.COMPLETE);
-        state.setLastActionResult(request.actionType().name(), "success", "");
-        state.queueChatMessage(countItemLabel(request, itemId) + " x" + count);
+        return snapshot;
     }
 
     private int countSnapshotItem(InventorySnapshot snapshot, String itemId) {

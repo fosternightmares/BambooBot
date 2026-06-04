@@ -23,6 +23,7 @@ public final class CommandHelp {
             "inventory",
             "inventory details",
             "count <item>",
+            "have <item> <count>",
             "deposit <item> <count>",
             "withdraw <item> <count>"
     );
