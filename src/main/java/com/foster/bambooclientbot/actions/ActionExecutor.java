@@ -1,18 +1,25 @@
 package com.foster.bambooclientbot.actions;
 
 import com.foster.bambooclientbot.state.BotState;
+import com.foster.bambooclientbot.state.ContainerSnapshot;
 import com.foster.bambooclientbot.state.LookedAtBlock;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.option.GameOptions;
 import net.minecraft.client.option.KeyBinding;
+import net.minecraft.item.ItemStack;
+import net.minecraft.registry.Registries;
+import net.minecraft.screen.slot.Slot;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 public class ActionExecutor {
@@ -82,6 +89,8 @@ public class ActionExecutor {
                 interactTargetedBlock(client, request);
             } else if (request.actionType() == ActionRequest.ActionType.CLOSE_CURRENT_SCREEN) {
                 closeCurrentScreen(client, request);
+            } else if (request.actionType() == ActionRequest.ActionType.CAPTURE_CONTAINER_SNAPSHOT) {
+                captureContainerSnapshot(client, request);
             }
         } catch (Exception exception) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
@@ -90,6 +99,37 @@ public class ActionExecutor {
         } finally {
             state.clearActiveAction();
         }
+    }
+
+    private void captureContainerSnapshot(MinecraftClient client, ActionRequest request) {
+        if (client == null || !(client.currentScreen instanceof HandledScreen<?> handledScreen)) {
+            request.setStatus(ActionRequest.ActionStatus.FAILED);
+            state.setLastActionResult(request.actionType().name(), "failed", "container_not_open");
+            state.queueChatMessage("container not open");
+            return;
+        }
+
+        List<ContainerSnapshot.Entry> entries = new ArrayList<>();
+        List<Slot> slots = handledScreen.getScreenHandler().slots;
+
+        for (Slot slot : slots) {
+            ItemStack stack = slot.getStack();
+
+            if (stack.isEmpty()) {
+                continue;
+            }
+
+            entries.add(new ContainerSnapshot.Entry(
+                    slot.id,
+                    Registries.ITEM.getId(stack.getItem()).toString(),
+                    stack.getCount()
+            ));
+        }
+
+        state.setContainerSnapshot(new ContainerSnapshot(System.currentTimeMillis(), slots.size(), List.copyOf(entries)));
+        request.setStatus(ActionRequest.ActionStatus.COMPLETE);
+        state.setLastActionResult(request.actionType().name(), "success", "");
+        state.queueChatMessage("snapshot captured");
     }
 
     private void interactTargetedBlock(MinecraftClient client, ActionRequest request) {

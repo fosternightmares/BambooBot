@@ -28,6 +28,8 @@ public class PlayerSensors {
                 + " held=" + heldItem
                 + " " + lookingAtBlockStatus(state)
                 + " " + state.containerState().format()
+                + " containerSnapshotSlots=" + state.containerSnapshot().slotCount()
+                + " containerSnapshotOccupied=" + state.containerSnapshot().occupiedSlots()
                 + " activeAction=" + state.activeAction()
                 + " " + state.lastActionStatus();
     }
