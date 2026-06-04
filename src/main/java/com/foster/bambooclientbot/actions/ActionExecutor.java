@@ -126,9 +126,10 @@ public class ActionExecutor {
         }
 
         List<ContainerSnapshot.Entry> entries = new ArrayList<>();
-        List<Slot> slots = handledScreen.getScreenHandler().slots;
+        List<Slot> slots = containerSlots(handledScreen.getScreenHandler().slots);
 
-        for (Slot slot : slots) {
+        for (int slotIndex = 0; slotIndex < slots.size(); slotIndex++) {
+            Slot slot = slots.get(slotIndex);
             ItemStack stack = slot.getStack();
 
             if (stack.isEmpty()) {
@@ -136,7 +137,7 @@ public class ActionExecutor {
             }
 
             entries.add(new ContainerSnapshot.Entry(
-                    slot.id,
+                    slotIndex,
                     Registries.ITEM.getId(stack.getItem()).toString(),
                     stack.getCount()
             ));
@@ -349,6 +350,18 @@ public class ActionExecutor {
 
         for (Slot slot : slots) {
             if (isPlayerInventorySlot(slot) == playerInventorySlots) {
+                matchingSlots.add(slot);
+            }
+        }
+
+        return matchingSlots;
+    }
+
+    private List<Slot> containerSlots(List<Slot> slots) {
+        List<Slot> matchingSlots = new ArrayList<>();
+
+        for (Slot slot : slots) {
+            if (!isPlayerInventorySlot(slot)) {
                 matchingSlots.add(slot);
             }
         }
