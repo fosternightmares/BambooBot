@@ -20,7 +20,8 @@ public class ActionRequest {
         CAPTURE_INVENTORY_SNAPSHOT,
         CAPTURE_INVENTORY_DETAILS,
         COUNT_ITEM,
-        HAVE_ITEM
+        HAVE_ITEM,
+        DROP_ITEM
     }
 
     public enum ActionStatus {
@@ -80,6 +81,10 @@ public class ActionRequest {
 
     public static ActionRequest itemQuery(ActionType actionType, String itemId, String itemLabel, int requestedCount) {
         return new ActionRequest(actionType, "", 0, 0, null, itemId, itemLabel, requestedCount);
+    }
+
+    public static ActionRequest targetedItem(ActionType actionType, String targetPlayer, String itemId, String itemLabel, int requestedCount) {
+        return new ActionRequest(actionType, targetPlayer, 0, 0, null, itemId, itemLabel, requestedCount);
     }
 
     public ActionType actionType() {

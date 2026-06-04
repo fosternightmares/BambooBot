@@ -3,6 +3,7 @@ package com.foster.bambooclientbot.actions;
 import com.foster.bambooclientbot.commands.ItemResolver;
 import com.foster.bambooclientbot.state.BotState;
 import com.foster.bambooclientbot.state.ContainerSnapshot;
+import com.foster.bambooclientbot.state.DropResult;
 import com.foster.bambooclientbot.state.InventorySnapshot;
 import com.foster.bambooclientbot.state.LookedAtBlock;
 import com.foster.bambooclientbot.state.TransferResult;
@@ -112,6 +113,8 @@ public class ActionExecutor {
                 countItem(client, request);
             } else if (request.actionType() == ActionRequest.ActionType.HAVE_ITEM) {
                 haveItem(client, request);
+            } else if (request.actionType() == ActionRequest.ActionType.DROP_ITEM) {
+                dropItem(client, request);
             }
         } catch (Exception exception) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
@@ -345,6 +348,112 @@ public class ActionExecutor {
             case 40 -> "offhand";
             default -> "slot" + slot;
         };
+    }
+
+    private void dropItem(MinecraftClient client, ActionRequest request) {
+        String itemId = normalizeItemId(request.itemId());
+
+        if (itemId.isBlank()) {
+            failDrop(request, itemId, 0, "invalid_item");
+            return;
+        }
+
+        if (request.requestedCount() <= 0) {
+            failDrop(request, itemId, 0, "invalid_count");
+            return;
+        }
+
+        if (client == null || client.player == null || client.world == null || client.interactionManager == null) {
+            failDrop(request, itemId, 0, "target_player_not_found");
+            return;
+        }
+
+        ClientPlayerEntity player = client.player;
+        AbstractClientPlayerEntity target = findTargetPlayer(client, player, request.actionData());
+
+        if (target == null) {
+            failDrop(request, itemId, 0, "target_player_not_found");
+            return;
+        }
+
+        ScreenHandler handler = player.currentScreenHandler;
+
+        if (handler == null) {
+            failDrop(request, itemId, 0, "drop_failed");
+            return;
+        }
+
+        List<Slot> inventorySlots = transferSlots(handler.slots, true);
+        int available = countMatchingItems(inventorySlots, itemId);
+
+        if (available <= 0) {
+            failDrop(request, itemId, 0, "item_not_found");
+            return;
+        }
+
+        rotateToward(player, target.getEyePos());
+        int toDrop = Math.min(request.requestedCount(), available);
+        int droppedCount = dropExactCount(client, handler, inventorySlots, itemId, toDrop);
+
+        if (droppedCount <= 0) {
+            failDrop(request, itemId, 0, "drop_failed");
+            return;
+        }
+
+        String result = droppedCount == request.requestedCount() ? "success" : "partial";
+        String reason = droppedCount == request.requestedCount() ? "" : "insufficient_quantity";
+        request.setStatus(ActionRequest.ActionStatus.COMPLETE);
+        state.setLastActionResult(request.actionType().name(), result, reason);
+        state.setLastDropResult(new DropResult(
+                itemId,
+                request.actionData(),
+                request.requestedCount(),
+                droppedCount,
+                result,
+                reason
+        ));
+        state.setInventorySnapshot(readInventorySnapshot(client));
+        state.queueChatMessage("dropped " + droppedCount + " " + countItemLabel(request, itemId));
+    }
+
+    private int dropExactCount(MinecraftClient client, ScreenHandler handler, List<Slot> inventorySlots,
+                               String itemId, int requestedCount) {
+        int droppedCount = 0;
+
+        for (Slot slot : inventorySlots) {
+            if (droppedCount >= requestedCount) {
+                break;
+            }
+
+            ItemStack stack = slot.getStack();
+
+            if (stack.isEmpty() || !matchesItem(stack, itemId)) {
+                continue;
+            }
+
+            int toDropFromSlot = Math.min(stack.getCount(), requestedCount - droppedCount);
+
+            for (int i = 0; i < toDropFromSlot; i++) {
+                client.interactionManager.clickSlot(handler.syncId, slot.id, 0, SlotActionType.THROW, client.player);
+                droppedCount++;
+            }
+        }
+
+        return droppedCount;
+    }
+
+    private void failDrop(ActionRequest request, String itemId, int droppedCount, String reason) {
+        request.setStatus(ActionRequest.ActionStatus.FAILED);
+        state.setLastActionResult(request.actionType().name(), "failed", reason);
+        state.setLastDropResult(new DropResult(
+                itemId,
+                request.actionData(),
+                request.requestedCount(),
+                droppedCount,
+                "failed",
+                reason
+        ));
+        state.queueChatMessage("drop failed");
     }
 
     private void transferItems(MinecraftClient client, ActionRequest request, String operation, boolean deposit) {

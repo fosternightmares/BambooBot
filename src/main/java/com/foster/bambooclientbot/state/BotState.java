@@ -18,6 +18,7 @@ public class BotState {
     private String lastActionResult = "none";
     private String lastActionReason = "";
     private TransferResult lastTransferResult;
+    private DropResult lastDropResult;
 
     public void queueCommand(CommandRequest request) {
         pendingCommands.add(request);
@@ -116,5 +117,17 @@ public class BotState {
         }
 
         return lastTransferResult.format();
+    }
+
+    public void setLastDropResult(DropResult lastDropResult) {
+        this.lastDropResult = lastDropResult;
+    }
+
+    public String lastDropStatus() {
+        if (lastDropResult == null) {
+            return "lastDrop=none";
+        }
+
+        return lastDropResult.format();
     }
 }

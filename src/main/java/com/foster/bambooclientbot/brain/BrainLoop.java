@@ -42,6 +42,8 @@ public class BrainLoop {
                 state.queueChatMessage("count failed");
             } else if ("invalid_have".equals(request.command())) {
                 state.queueChatMessage("have failed");
+            } else if ("invalid_drop".equals(request.command())) {
+                state.queueChatMessage("drop failed");
             } else if ("stop".equals(request.command())) {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.STOP, ""));
             } else if ("deposit".equals(request.command())) {
@@ -65,6 +67,14 @@ public class BrainLoop {
             } else if ("have".equals(request.command())) {
                 state.queueAction(ActionRequest.itemQuery(
                         ActionRequest.ActionType.HAVE_ITEM,
+                        request.itemId(),
+                        request.itemLabel(),
+                        request.requestedCount()
+                ));
+            } else if ("drop".equals(request.command())) {
+                state.queueAction(ActionRequest.targetedItem(
+                        ActionRequest.ActionType.DROP_ITEM,
+                        request.targetPlayer(),
                         request.itemId(),
                         request.itemLabel(),
                         request.requestedCount()

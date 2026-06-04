@@ -34,7 +34,8 @@ public class PlayerSensors {
                 + " " + inventorySnapshotStatus(state)
                 + " activeAction=" + state.activeAction()
                 + " " + state.lastActionStatus()
-                + " " + state.lastTransferStatus();
+                + " " + state.lastTransferStatus()
+                + " " + state.lastDropStatus();
     }
 
     private String containerSnapshotStatus(BotState state) {

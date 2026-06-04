@@ -129,6 +129,22 @@ public final class ChatHandler {
             return new CommandRequest("invalid_have");
         }
 
+        if (command.startsWith("drop ")) {
+            return parseDropItem(command.substring("drop ".length()), senderName);
+        }
+
+        if ("drop".equals(command)) {
+            return new CommandRequest("invalid_drop");
+        }
+
+        if (command.startsWith("give ")) {
+            return parseGiveItem(command.substring("give ".length()), senderName);
+        }
+
+        if ("give".equals(command)) {
+            return new CommandRequest("invalid_drop");
+        }
+
         String[] parts = command.split("\\s+");
 
         if (parts.length > 1 && isMovementCommand(parts[0])) {
@@ -244,5 +260,80 @@ public final class ChatHandler {
         }
 
         return CommandRequest.itemQuery("have", itemId, ItemResolver.displayItemArg(rawItemText), requestedCount);
+    }
+
+    private static CommandRequest parseDropItem(String dropText, String senderName) {
+        String trimmed = dropText.trim();
+
+        if (trimmed.isBlank()) {
+            return new CommandRequest("invalid_drop");
+        }
+
+        String targetPlayer = senderName;
+        String itemAndCountText = trimmed;
+        int targetStart = trimmed.lastIndexOf(" to ");
+
+        if (targetStart >= 0) {
+            itemAndCountText = trimmed.substring(0, targetStart).trim();
+            targetPlayer = resolvePlayerArg(trimmed.substring(targetStart + " to ".length()).trim(), senderName);
+        }
+
+        if (targetPlayer == null || targetPlayer.isBlank()) {
+            return new CommandRequest("invalid_drop");
+        }
+
+        return parseTargetedItem("drop", targetPlayer, itemAndCountText);
+    }
+
+    private static CommandRequest parseGiveItem(String giveText, String senderName) {
+        String trimmed = giveText.trim();
+        int targetEnd = trimmed.indexOf(' ');
+
+        if (targetEnd <= 0 || targetEnd >= trimmed.length() - 1) {
+            return new CommandRequest("invalid_drop");
+        }
+
+        String targetPlayer = resolvePlayerArg(trimmed.substring(0, targetEnd), senderName);
+
+        if (targetPlayer.isBlank()) {
+            return new CommandRequest("invalid_drop");
+        }
+
+        return parseTargetedItem("drop", targetPlayer, trimmed.substring(targetEnd + 1));
+    }
+
+    private static CommandRequest parseTargetedItem(String command, String targetPlayer, String itemAndCountText) {
+        String trimmed = itemAndCountText.trim();
+        int countStart = trimmed.lastIndexOf(' ');
+
+        if (countStart <= 0 || countStart >= trimmed.length() - 1) {
+            return new CommandRequest("invalid_drop");
+        }
+
+        String rawItemText = trimmed.substring(0, countStart);
+        String countText = trimmed.substring(countStart + 1);
+        String itemId = ItemResolver.resolveItemArg(rawItemText);
+
+        if (itemId.isBlank()) {
+            return new CommandRequest("invalid_drop");
+        }
+
+        try {
+            int requestedCount = Integer.parseInt(countText);
+
+            if (requestedCount <= 0) {
+                return new CommandRequest("invalid_drop");
+            }
+
+            return CommandRequest.targetedItem(
+                    command,
+                    targetPlayer,
+                    itemId,
+                    ItemResolver.displayItemArg(rawItemText),
+                    requestedCount
+            );
+        } catch (NumberFormatException exception) {
+            return new CommandRequest("invalid_drop");
+        }
     }
 }

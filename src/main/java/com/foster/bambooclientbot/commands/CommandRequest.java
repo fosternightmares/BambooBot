@@ -26,6 +26,10 @@ public record CommandRequest(String command, String targetPlayer, int durationTi
         return new CommandRequest(command, "", 0, 0, itemId, itemLabel, requestedCount);
     }
 
+    public static CommandRequest targetedItem(String command, String targetPlayer, String itemId, String itemLabel, int requestedCount) {
+        return new CommandRequest(command, targetPlayer, 0, 0, itemId, itemLabel, requestedCount);
+    }
+
     private static String compactItemId(String itemId) {
         if (itemId.startsWith("minecraft:")) {
             return itemId.substring("minecraft:".length());
