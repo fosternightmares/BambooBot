@@ -2,6 +2,7 @@ package com.foster.bambooclientbot.chat;
 
 import com.foster.bambooclientbot.BambooClientBot;
 import com.foster.bambooclientbot.commands.CommandRequest;
+import com.foster.bambooclientbot.commands.ItemResolver;
 import com.foster.bambooclientbot.state.BotState;
 import com.mojang.authlib.GameProfile;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
@@ -96,15 +97,23 @@ public final class ChatHandler {
             return new CommandRequest("follow", resolvePlayerArg(targetPlayer, senderName));
         }
 
-        String[] parts = command.split("\\s+");
-
-        if ("deposit".equals(parts[0]) || "withdraw".equals(parts[0])) {
-            if (parts.length != 3) {
-                return new CommandRequest("invalid_transfer");
-            }
-
-            return parseItemTransfer(parts[0], parts[1], parts[2]);
+        if (command.startsWith("deposit ")) {
+            return parseItemTransfer("deposit", command.substring("deposit ".length()));
         }
+
+        if ("deposit".equals(command)) {
+            return new CommandRequest("invalid_count");
+        }
+
+        if (command.startsWith("withdraw ")) {
+            return parseItemTransfer("withdraw", command.substring("withdraw ".length()));
+        }
+
+        if ("withdraw".equals(command)) {
+            return new CommandRequest("invalid_count");
+        }
+
+        String[] parts = command.split("\\s+");
 
         if (parts.length > 1 && isMovementCommand(parts[0])) {
             if (parts.length != 2) {
@@ -146,17 +155,32 @@ public final class ChatHandler {
         }
     }
 
-    private static CommandRequest parseItemTransfer(String command, String itemId, String countText) {
+    private static CommandRequest parseItemTransfer(String command, String transferText) {
+        String trimmed = transferText.trim();
+        int countStart = trimmed.lastIndexOf(' ');
+
+        if (countStart <= 0 || countStart >= trimmed.length() - 1) {
+            return new CommandRequest("invalid_count");
+        }
+
+        String rawItemText = trimmed.substring(0, countStart);
+        String countText = trimmed.substring(countStart + 1);
+        String itemId = ItemResolver.resolveItemArg(rawItemText);
+
+        if (itemId.isBlank()) {
+            return new CommandRequest("invalid_item");
+        }
+
         try {
             int requestedCount = Integer.parseInt(countText);
 
             if (requestedCount <= 0) {
-                return new CommandRequest("invalid_transfer");
+                return new CommandRequest("invalid_count");
             }
 
             return CommandRequest.itemTransfer(command, itemId, requestedCount);
         } catch (NumberFormatException exception) {
-            return new CommandRequest("invalid_transfer");
+            return new CommandRequest("invalid_count");
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.foster.bambooclientbot.actions;
 
+import com.foster.bambooclientbot.commands.ItemResolver;
 import com.foster.bambooclientbot.state.BotState;
 import com.foster.bambooclientbot.state.ContainerSnapshot;
 import com.foster.bambooclientbot.state.LookedAtBlock;
@@ -142,6 +143,11 @@ public class ActionExecutor {
 
     private void transferItems(MinecraftClient client, ActionRequest request, String operation, boolean deposit) {
         String normalizedItemId = normalizeItemId(request.itemId());
+
+        if (normalizedItemId.isBlank() || request.requestedCount() <= 0) {
+            failTransfer(request, operation, normalizedItemId, 0, true, 0, 0, "invalid_item");
+            return;
+        }
 
         if (client == null || client.player == null || client.interactionManager == null
                 || !(client.currentScreen instanceof HandledScreen<?> handledScreen)) {
@@ -379,13 +385,7 @@ public class ActionExecutor {
     }
 
     private String normalizeItemId(String itemId) {
-        String normalized = itemId.toLowerCase(Locale.ROOT);
-
-        if (normalized.contains(":")) {
-            return normalized;
-        }
-
-        return "minecraft:" + normalized;
+        return ItemResolver.resolveItemArg(itemId);
     }
 
     private String compactItemId(String itemId) {
