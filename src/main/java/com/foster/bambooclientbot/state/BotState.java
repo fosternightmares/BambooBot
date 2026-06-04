@@ -19,6 +19,7 @@ public class BotState {
     private String lastActionReason = "";
     private TransferResult lastTransferResult;
     private DropResult lastDropResult;
+    private boolean followJump;
 
     public void queueCommand(CommandRequest request) {
         pendingCommands.add(request);
@@ -129,5 +130,13 @@ public class BotState {
         }
 
         return lastDropResult.format();
+    }
+
+    public void setFollowJump(boolean followJump) {
+        this.followJump = followJump;
+    }
+
+    public boolean followJump() {
+        return followJump;
     }
 }

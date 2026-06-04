@@ -35,6 +35,8 @@ public class ActionExecutor {
     private static final double FOLLOW_DISTANCE = 3.0;
     private static final double FOLLOW_SPRINT_ENABLE_DISTANCE = 6.0;
     private static final double FOLLOW_SPRINT_DISABLE_DISTANCE = 4.0;
+    private static final double FOLLOW_JUMP_TARGET_Y_DELTA = 0.5;
+    private static final int FOLLOW_JUMP_COOLDOWN_TICKS = 8;
     private static final int MAIN_INVENTORY_SLOT_COUNT = 36;
     private static final int TOTAL_INVENTORY_SLOT_COUNT = 41;
     private static final int INVENTORY_DETAILS_MAX_LENGTH = 240;
@@ -44,6 +46,7 @@ public class ActionExecutor {
     private int timedMovementTicksRemaining;
     private ActionRequest activeApproach;
     private ActionRequest activeFollow;
+    private int followJumpCooldownTicks;
 
     public ActionExecutor(BotState state) {
         this.state = state;
@@ -72,6 +75,7 @@ public class ActionExecutor {
                 activeFollow = null;
                 timedMovement = null;
                 timedMovementTicksRemaining = 0;
+                followJumpCooldownTicks = 0;
                 stop(client);
                 request.setStatus(ActionRequest.ActionStatus.COMPLETE);
                 state.queueChatMessage("stopped");
@@ -859,6 +863,7 @@ public class ActionExecutor {
             activeFollow.setStatus(ActionRequest.ActionStatus.FAILED);
             activeFollow = null;
             stop(client);
+            state.setFollowJump(false);
             state.queueChatMessage("action failed");
             return;
         }
@@ -870,19 +875,26 @@ public class ActionExecutor {
             activeFollow.setStatus(ActionRequest.ActionStatus.FAILED);
             activeFollow = null;
             stop(client);
+            state.setFollowJump(false);
             state.queueChatMessage("player not found");
             return;
         }
 
         rotateToward(player, target.getEyePos());
+        tickFollowJumpCooldown();
+        boolean movingForward = false;
 
         if (player.distanceTo(target) > FOLLOW_DISTANCE) {
             clearDirectionalKeys(client.options);
             client.options.forwardKey.setPressed(true);
+            movingForward = true;
         } else {
             clearDirectionalKeys(client.options);
+            client.options.jumpKey.setPressed(false);
+            state.setFollowJump(false);
         }
 
+        updateFollowJump(client.options, player, target, movingForward);
         updateFollowSprint(client.options, player.distanceTo(target));
     }
 
@@ -918,8 +930,11 @@ public class ActionExecutor {
 
         activeApproach = null;
         activeFollow = null;
+        followJumpCooldownTicks = 0;
         GameOptions options = client.options;
         clearDirectionalKeys(options);
+        options.jumpKey.setPressed(false);
+        state.setFollowJump(false);
         options.sprintKey.setPressed(false);
         movementKey(options, request.actionType()).setPressed(true);
 
@@ -961,7 +976,10 @@ public class ActionExecutor {
         timedMovement = null;
         timedMovementTicksRemaining = 0;
         activeFollow = null;
+        followJumpCooldownTicks = 0;
         clearDirectionalKeys(client.options);
+        client.options.jumpKey.setPressed(false);
+        state.setFollowJump(false);
         client.options.sprintKey.setPressed(false);
         rotateToward(player, target.getEyePos());
         client.options.forwardKey.setPressed(true);
@@ -988,6 +1006,7 @@ public class ActionExecutor {
         timedMovement = null;
         timedMovementTicksRemaining = 0;
         activeApproach = null;
+        followJumpCooldownTicks = 0;
         clearDirectionalKeys(client.options);
         client.options.sprintKey.setPressed(false);
         rotateToward(player, target.getEyePos());
@@ -997,6 +1016,7 @@ public class ActionExecutor {
         }
 
         updateFollowSprint(client.options, player.distanceTo(target));
+        state.setFollowJump(false);
         activeFollow = request;
         state.queueChatMessage("following " + request.actionData());
     }
@@ -1009,6 +1029,8 @@ public class ActionExecutor {
         GameOptions options = client.options;
         clearDirectionalKeys(options);
         options.jumpKey.setPressed(false);
+        followJumpCooldownTicks = 0;
+        state.setFollowJump(false);
         options.sneakKey.setPressed(false);
         options.sprintKey.setPressed(false);
         options.attackKey.setPressed(false);
@@ -1021,6 +1043,41 @@ public class ActionExecutor {
         } else if (targetDistance <= FOLLOW_SPRINT_DISABLE_DISTANCE) {
             options.sprintKey.setPressed(false);
         }
+    }
+
+    private void tickFollowJumpCooldown() {
+        if (followJumpCooldownTicks > 0) {
+            followJumpCooldownTicks--;
+        }
+    }
+
+    private void updateFollowJump(GameOptions options, ClientPlayerEntity player, AbstractClientPlayerEntity target, boolean movingForward) {
+        if (!movingForward || !canFollowJump(player)) {
+            options.jumpKey.setPressed(false);
+            state.setFollowJump(false);
+            return;
+        }
+
+        boolean targetAbove = target.getY() - player.getY() >= FOLLOW_JUMP_TARGET_Y_DELTA
+                && player.distanceTo(target) <= FOLLOW_DISTANCE + 2.0;
+        boolean blocked = player.horizontalCollision;
+
+        if ((targetAbove || blocked) && followJumpCooldownTicks <= 0) {
+            options.jumpKey.setPressed(true);
+            state.setFollowJump(true);
+            followJumpCooldownTicks = FOLLOW_JUMP_COOLDOWN_TICKS;
+            return;
+        }
+
+        options.jumpKey.setPressed(false);
+        state.setFollowJump(false);
+    }
+
+    private boolean canFollowJump(ClientPlayerEntity player) {
+        return player.isOnGround()
+                && !player.isTouchingWater()
+                && !player.isSwimming()
+                && !player.isClimbing();
     }
 
     private void clearDirectionalKeys(GameOptions options) {
