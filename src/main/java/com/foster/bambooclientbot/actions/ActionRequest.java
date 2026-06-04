@@ -2,7 +2,8 @@ package com.foster.bambooclientbot.actions;
 
 public class ActionRequest {
     public enum ActionType {
-        STOP
+        STOP,
+        LOOK_AT_PLAYER
     }
 
     public enum ActionStatus {

@@ -28,6 +28,8 @@ public class BrainLoop {
                 state.queueChatMessage(worldSensors.readNearby(client));
             } else if ("stop".equals(request.command())) {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.STOP, ""));
+            } else if ("look_at".equals(request.command())) {
+                state.queueAction(new ActionRequest(ActionRequest.ActionType.LOOK_AT_PLAYER, request.targetPlayer()));
             }
         }
     }

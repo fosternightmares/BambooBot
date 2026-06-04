@@ -15,14 +15,14 @@ public final class ChatHandler {
     public static void register(BotState state) {
         ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) -> {
             String botName = botName(MinecraftClient.getInstance());
-            String command = parseCommand(messageContent(message, signedMessage), botName);
+            CommandRequest command = parseCommand(messageContent(message, signedMessage), botName);
 
             if (command == null) {
                 return;
             }
 
-            state.queueCommand(new CommandRequest(command));
-            BambooClientBot.LOGGER.info("[BambooBot] Command received: {}", command);
+            state.queueCommand(command);
+            BambooClientBot.LOGGER.info("[BambooBot] Command received: {}", command.command());
         });
     }
 
@@ -42,17 +42,28 @@ public final class ChatHandler {
         return message.getString();
     }
 
-    private static String parseCommand(String message, String botName) {
+    private static CommandRequest parseCommand(String message, String botName) {
         String content = message.trim();
+        String command;
 
         if (content.startsWith(botName + ", ")) {
-            return content.substring(botName.length() + 2).trim();
+            command = content.substring(botName.length() + 2).trim();
+        } else if (content.startsWith(botName + " ")) {
+            command = content.substring(botName.length() + 1).trim();
+        } else {
+            return null;
         }
 
-        if (content.startsWith(botName + " ")) {
-            return content.substring(botName.length() + 1).trim();
+        if (command.startsWith("look at ")) {
+            String targetPlayer = command.substring("look at ".length()).trim();
+
+            if (targetPlayer.isEmpty()) {
+                return null;
+            }
+
+            return new CommandRequest("look_at", targetPlayer);
         }
 
-        return null;
+        return new CommandRequest(command);
     }
 }
