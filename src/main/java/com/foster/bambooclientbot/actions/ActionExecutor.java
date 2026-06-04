@@ -376,15 +376,18 @@ public class ActionExecutor {
             return;
         }
 
-        ScreenHandler handler = player.currentScreenHandler;
+        ScreenHandler handler = player.playerScreenHandler;
 
         if (handler == null) {
             failDrop(request, itemId, 0, "drop_failed");
             return;
         }
 
-        List<Slot> inventorySlots = transferSlots(handler.slots, true);
-        int available = countMatchingItems(inventorySlots, itemId);
+        List<Slot> normalSlots = normalInventorySlots(handler.slots);
+        List<Slot> equippedSlots = equippedInventorySlots(handler.slots);
+        int normalAvailable = countMatchingItems(normalSlots, itemId);
+        List<Slot> dropSlots = normalAvailable > 0 ? normalSlots : equippedSlots;
+        int available = normalAvailable > 0 ? normalAvailable : countMatchingItems(equippedSlots, itemId);
 
         if (available <= 0) {
             failDrop(request, itemId, 0, "item_not_found");
@@ -393,10 +396,10 @@ public class ActionExecutor {
 
         rotateToward(player, target.getEyePos());
         int toDrop = Math.min(request.requestedCount(), available);
-        int droppedCount = dropExactCount(client, handler, inventorySlots, itemId, toDrop);
+        int droppedCount = dropExactCount(client, handler, dropSlots, itemId, toDrop);
 
         if (droppedCount <= 0) {
-            failDrop(request, itemId, 0, "drop_failed");
+            failDrop(request, itemId, 0, normalAvailable > 0 ? "drop_failed" : "unequip_failed");
             return;
         }
 
@@ -414,6 +417,30 @@ public class ActionExecutor {
         ));
         state.setInventorySnapshot(readInventorySnapshot(client));
         state.queueChatMessage("dropped " + droppedCount + " " + countItemLabel(request, itemId));
+    }
+
+    private List<Slot> normalInventorySlots(List<Slot> slots) {
+        List<Slot> matchingSlots = new ArrayList<>();
+
+        for (Slot slot : slots) {
+            if (isPlayerInventorySlot(slot) && slot.id >= 9 && slot.id <= 44) {
+                matchingSlots.add(slot);
+            }
+        }
+
+        return matchingSlots;
+    }
+
+    private List<Slot> equippedInventorySlots(List<Slot> slots) {
+        List<Slot> matchingSlots = new ArrayList<>();
+
+        for (Slot slot : slots) {
+            if (isPlayerInventorySlot(slot) && ((slot.id >= 5 && slot.id <= 8) || slot.id == 45)) {
+                matchingSlots.add(slot);
+            }
+        }
+
+        return matchingSlots;
     }
 
     private int dropExactCount(MinecraftClient client, ScreenHandler handler, List<Slot> inventorySlots,
