@@ -46,6 +46,10 @@ public class BrainLoop {
                 state.queueChatMessage("drop failed");
             } else if ("stop".equals(request.command())) {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.STOP, ""));
+            } else if ("autoswing on".equals(request.command()) || "swing on".equals(request.command())) {
+                state.queueAction(new ActionRequest(ActionRequest.ActionType.SET_AUTOSWING, "on"));
+            } else if ("autoswing off".equals(request.command()) || "swing off".equals(request.command())) {
+                state.queueAction(new ActionRequest(ActionRequest.ActionType.SET_AUTOSWING, "off"));
             } else if ("deposit".equals(request.command())) {
                 state.queueAction(ActionRequest.itemTransfer(
                         ActionRequest.ActionType.DEPOSIT_ITEM,

@@ -34,6 +34,7 @@ public class PlayerSensors {
                 + " " + inventorySnapshotStatus(state)
                 + " activeAction=" + state.activeAction()
                 + " followJump=" + state.followJump()
+                + " autoSwing=" + state.autoSwing()
                 + " " + state.lastActionStatus()
                 + " " + state.lastTransferStatus()
                 + " " + state.lastDropStatus();

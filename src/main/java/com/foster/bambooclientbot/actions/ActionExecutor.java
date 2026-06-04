@@ -37,6 +37,7 @@ public class ActionExecutor {
     private static final double FOLLOW_SPRINT_DISABLE_DISTANCE = 4.0;
     private static final double FOLLOW_JUMP_TARGET_Y_DELTA = 0.5;
     private static final int FOLLOW_JUMP_COOLDOWN_TICKS = 8;
+    private static final long AUTOSWING_INTERVAL_MILLIS = 1_000L;
     private static final int MAIN_INVENTORY_SLOT_COUNT = 36;
     private static final int TOTAL_INVENTORY_SLOT_COUNT = 41;
     private static final int INVENTORY_DETAILS_MAX_LENGTH = 240;
@@ -57,12 +58,14 @@ public class ActionExecutor {
 
         if (request != null) {
             executeAction(client, request);
+            tickAutoSwing(client);
             return;
         }
 
         tickApproach(client);
         tickFollow(client);
         tickTimedMovement(client);
+        tickAutoSwing(client);
     }
 
     private void executeAction(MinecraftClient client, ActionRequest request) {
@@ -76,6 +79,8 @@ public class ActionExecutor {
                 timedMovement = null;
                 timedMovementTicksRemaining = 0;
                 followJumpCooldownTicks = 0;
+                state.setAutoSwing(false);
+                state.setLastSwingTimeMillis(0L);
                 stop(client);
                 request.setStatus(ActionRequest.ActionStatus.COMPLETE);
                 state.queueChatMessage("stopped");
@@ -119,6 +124,8 @@ public class ActionExecutor {
                 haveItem(client, request);
             } else if (request.actionType() == ActionRequest.ActionType.DROP_ITEM) {
                 dropItem(client, request);
+            } else if (request.actionType() == ActionRequest.ActionType.SET_AUTOSWING) {
+                setAutoSwing(request);
             }
         } catch (Exception exception) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
@@ -159,6 +166,15 @@ public class ActionExecutor {
         request.setStatus(ActionRequest.ActionStatus.COMPLETE);
         state.setLastActionResult(request.actionType().name(), "success", "");
         state.queueChatMessage("snapshot captured");
+    }
+
+    private void setAutoSwing(ActionRequest request) {
+        boolean enabled = "on".equals(request.actionData());
+        state.setAutoSwing(enabled);
+        state.setLastSwingTimeMillis(0L);
+        request.setStatus(ActionRequest.ActionStatus.COMPLETE);
+        state.setLastActionResult(request.actionType().name(), enabled ? "enabled" : "disabled", "");
+        state.queueChatMessage(enabled ? "autoswing enabled" : "autoswing disabled");
     }
 
     private void captureInventorySnapshot(MinecraftClient client, ActionRequest request, boolean includeDetails) {
@@ -1035,6 +1051,27 @@ public class ActionExecutor {
         options.sprintKey.setPressed(false);
         options.attackKey.setPressed(false);
         options.useKey.setPressed(false);
+    }
+
+    private void tickAutoSwing(MinecraftClient client) {
+        if (!state.autoSwing()) {
+            return;
+        }
+
+        if (client == null || client.player == null) {
+            state.setAutoSwing(false);
+            state.setLastSwingTimeMillis(0L);
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+
+        if (now - state.lastSwingTimeMillis() < AUTOSWING_INTERVAL_MILLIS) {
+            return;
+        }
+
+        client.player.swingHand(Hand.MAIN_HAND);
+        state.setLastSwingTimeMillis(now);
     }
 
     private void updateFollowSprint(GameOptions options, double targetDistance) {

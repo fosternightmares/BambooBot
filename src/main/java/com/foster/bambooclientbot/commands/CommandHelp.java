@@ -16,6 +16,8 @@ public final class CommandHelp {
             "look at me",
             "approach me",
             "follow me",
+            "autoswing on",
+            "autoswing off",
             "open",
             "close",
             "snapshot",

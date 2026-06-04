@@ -20,6 +20,8 @@ public class BotState {
     private TransferResult lastTransferResult;
     private DropResult lastDropResult;
     private boolean followJump;
+    private boolean autoSwing;
+    private long lastSwingTimeMillis;
 
     public void queueCommand(CommandRequest request) {
         pendingCommands.add(request);
@@ -138,5 +140,21 @@ public class BotState {
 
     public boolean followJump() {
         return followJump;
+    }
+
+    public void setAutoSwing(boolean autoSwing) {
+        this.autoSwing = autoSwing;
+    }
+
+    public boolean autoSwing() {
+        return autoSwing;
+    }
+
+    public void setLastSwingTimeMillis(long lastSwingTimeMillis) {
+        this.lastSwingTimeMillis = lastSwingTimeMillis;
+    }
+
+    public long lastSwingTimeMillis() {
+        return lastSwingTimeMillis;
     }
 }

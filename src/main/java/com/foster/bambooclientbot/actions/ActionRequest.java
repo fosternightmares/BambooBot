@@ -21,7 +21,8 @@ public class ActionRequest {
         CAPTURE_INVENTORY_DETAILS,
         COUNT_ITEM,
         HAVE_ITEM,
-        DROP_ITEM
+        DROP_ITEM,
+        SET_AUTOSWING
     }
 
     public enum ActionStatus {
