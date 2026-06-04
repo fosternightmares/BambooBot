@@ -26,19 +26,25 @@ public class BrainLoop {
                 state.queueChatMessage(playerSensors.readStatus(client));
             } else if ("nearby".equals(request.command())) {
                 state.queueChatMessage(worldSensors.readNearby(client));
+            } else if ("invalid_duration".equals(request.command())) {
+                state.queueChatMessage("invalid duration");
             } else if ("stop".equals(request.command())) {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.STOP, ""));
             } else if ("forward".equals(request.command())) {
-                state.queueAction(new ActionRequest(ActionRequest.ActionType.FORWARD, ""));
+                queueMovement(ActionRequest.ActionType.FORWARD, request);
             } else if ("back".equals(request.command())) {
-                state.queueAction(new ActionRequest(ActionRequest.ActionType.BACK, ""));
+                queueMovement(ActionRequest.ActionType.BACK, request);
             } else if ("left".equals(request.command())) {
-                state.queueAction(new ActionRequest(ActionRequest.ActionType.LEFT, ""));
+                queueMovement(ActionRequest.ActionType.LEFT, request);
             } else if ("right".equals(request.command())) {
-                state.queueAction(new ActionRequest(ActionRequest.ActionType.RIGHT, ""));
+                queueMovement(ActionRequest.ActionType.RIGHT, request);
             } else if ("look_at".equals(request.command())) {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.LOOK_AT_PLAYER, request.targetPlayer()));
             }
         }
+    }
+
+    private void queueMovement(ActionRequest.ActionType actionType, CommandRequest request) {
+        state.queueAction(new ActionRequest(actionType, "", request.durationTicks(), request.durationSeconds()));
     }
 }

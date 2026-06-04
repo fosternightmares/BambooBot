@@ -21,11 +21,19 @@ public class ActionRequest {
     private final ActionType actionType;
     private ActionStatus actionStatus;
     private final String actionData;
+    private final int durationTicks;
+    private final int durationSeconds;
 
     public ActionRequest(ActionType actionType, String actionData) {
+        this(actionType, actionData, 0, 0);
+    }
+
+    public ActionRequest(ActionType actionType, String actionData, int durationTicks, int durationSeconds) {
         this.actionType = actionType;
         this.actionStatus = ActionStatus.IDLE;
         this.actionData = actionData;
+        this.durationTicks = durationTicks;
+        this.durationSeconds = durationSeconds;
     }
 
     public ActionType actionType() {
@@ -42,5 +50,13 @@ public class ActionRequest {
 
     public String actionData() {
         return actionData;
+    }
+
+    public int durationTicks() {
+        return durationTicks;
+    }
+
+    public int durationSeconds() {
+        return durationSeconds;
     }
 }

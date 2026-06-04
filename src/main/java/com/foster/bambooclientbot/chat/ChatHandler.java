@@ -9,6 +9,9 @@ import net.minecraft.network.message.SignedMessage;
 import net.minecraft.text.Text;
 
 public final class ChatHandler {
+    private static final int MIN_DURATION_SECONDS = 1;
+    private static final int MAX_DURATION_SECONDS = 10;
+
     private ChatHandler() {
     }
 
@@ -64,6 +67,37 @@ public final class ChatHandler {
             return new CommandRequest("look_at", targetPlayer);
         }
 
+        String[] parts = command.split("\\s+");
+
+        if (parts.length > 1 && isMovementCommand(parts[0])) {
+            if (parts.length != 2) {
+                return new CommandRequest("invalid_duration");
+            }
+
+            return parseTimedMovement(parts[0], parts[1]);
+        }
+
         return new CommandRequest(command);
+    }
+
+    private static boolean isMovementCommand(String command) {
+        return "forward".equals(command)
+                || "back".equals(command)
+                || "left".equals(command)
+                || "right".equals(command);
+    }
+
+    private static CommandRequest parseTimedMovement(String command, String durationText) {
+        try {
+            int durationSeconds = Integer.parseInt(durationText);
+
+            if (durationSeconds < MIN_DURATION_SECONDS || durationSeconds > MAX_DURATION_SECONDS) {
+                return new CommandRequest("invalid_duration");
+            }
+
+            return CommandRequest.timedMovement(command, durationSeconds);
+        } catch (NumberFormatException exception) {
+            return new CommandRequest("invalid_duration");
+        }
     }
 }

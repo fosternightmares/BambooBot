@@ -12,6 +12,8 @@ public class ActionExecutor {
     private static final double LOOK_AT_RANGE = 32.0;
 
     private final BotState state;
+    private ActionRequest timedMovement;
+    private int timedMovementTicksRemaining;
 
     public ActionExecutor(BotState state) {
         this.state = state;
@@ -20,14 +22,21 @@ public class ActionExecutor {
     public void tick(MinecraftClient client) {
         ActionRequest request = state.pollAction();
 
-        if (request == null) {
+        if (request != null) {
+            executeAction(client, request);
             return;
         }
 
+        tickTimedMovement(client);
+    }
+
+    private void executeAction(MinecraftClient client, ActionRequest request) {
         request.setStatus(ActionRequest.ActionStatus.RUNNING);
 
         try {
             if (request.actionType() == ActionRequest.ActionType.STOP) {
+                timedMovement = null;
+                timedMovementTicksRemaining = 0;
                 stop(client);
                 request.setStatus(ActionRequest.ActionStatus.COMPLETE);
                 state.queueChatMessage("stopped");
@@ -54,6 +63,29 @@ public class ActionExecutor {
         }
     }
 
+    private void tickTimedMovement(MinecraftClient client) {
+        if (timedMovement == null) {
+            return;
+        }
+
+        if (client == null || client.player == null || client.options == null) {
+            timedMovement.setStatus(ActionRequest.ActionStatus.FAILED);
+            timedMovement = null;
+            timedMovementTicksRemaining = 0;
+            state.queueChatMessage("action failed");
+            return;
+        }
+
+        timedMovementTicksRemaining--;
+
+        if (timedMovementTicksRemaining <= 0) {
+            stop(client);
+            timedMovement.setStatus(ActionRequest.ActionStatus.COMPLETE);
+            timedMovement = null;
+            state.queueChatMessage("movement complete");
+        }
+    }
+
     private void move(MinecraftClient client, ActionRequest request, String direction) {
         if (client == null || client.player == null || client.options == null) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
@@ -64,8 +96,17 @@ public class ActionExecutor {
         GameOptions options = client.options;
         clearDirectionalKeys(options);
         movementKey(options, request.actionType()).setPressed(true);
-        request.setStatus(ActionRequest.ActionStatus.COMPLETE);
-        state.queueChatMessage("moving " + direction);
+
+        if (request.durationTicks() > 0) {
+            timedMovement = request;
+            timedMovementTicksRemaining = request.durationTicks();
+            state.queueChatMessage("moving " + direction + " for " + request.durationSeconds() + "s");
+        } else {
+            timedMovement = null;
+            timedMovementTicksRemaining = 0;
+            request.setStatus(ActionRequest.ActionStatus.COMPLETE);
+            state.queueChatMessage("moving " + direction);
+        }
     }
 
     private void stop(MinecraftClient client) {
