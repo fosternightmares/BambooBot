@@ -9,14 +9,15 @@
   ],
   "contact": {},
   "license": "MIT",
-  "environment": "*",
+  "environment": "client",
   "entrypoints": {
-    "main": [
+    "client": [
       "com.foster.bambooclientbot.BambooClientBot"
     ]
   },
   "depends": {
     "fabricloader": ">=0.19.3",
+    "fabric-api": "*",
     "minecraft": "1.21.11",
     "java": ">=21"
   }
