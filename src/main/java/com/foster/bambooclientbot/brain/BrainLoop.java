@@ -3,11 +3,13 @@ package com.foster.bambooclientbot.brain;
 import com.foster.bambooclientbot.actions.ActionRequest;
 import com.foster.bambooclientbot.commands.CommandHelp;
 import com.foster.bambooclientbot.commands.CommandRequest;
+import com.foster.bambooclientbot.navigation.NavigationGrid;
 import com.foster.bambooclientbot.sensors.PlayerSensors;
 import com.foster.bambooclientbot.sensors.WorldSensors;
 import com.foster.bambooclientbot.state.BotState;
 import com.foster.bambooclientbot.state.ContainerSnapshot;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.util.math.BlockPos;
 
 public class BrainLoop {
     private static final int SNAPSHOT_DETAILS_MAX_LENGTH = 240;
@@ -15,6 +17,7 @@ public class BrainLoop {
     private final BotState state;
     private final PlayerSensors playerSensors;
     private final WorldSensors worldSensors;
+    private final NavigationGrid navigationGrid = new NavigationGrid();
 
     public BrainLoop(BotState state, PlayerSensors playerSensors, WorldSensors worldSensors) {
         this.state = state;
@@ -30,6 +33,8 @@ public class BrainLoop {
                 state.queueChatMessage(playerSensors.readStatus(client, state));
             } else if ("nearby".equals(request.command())) {
                 state.queueChatMessage(worldSensors.readNearby(client));
+            } else if ("nav check".equals(request.command())) {
+                state.queueChatMessage(readNavigationCheck(client));
             } else if ("help".equals(request.command()) || "commands".equals(request.command())) {
                 state.queueChatMessage(CommandHelp.format());
             } else if ("invalid_duration".equals(request.command())) {
@@ -188,5 +193,18 @@ public class BrainLoop {
 
     private void queueMovement(ActionRequest.ActionType actionType, CommandRequest request) {
         state.queueAction(new ActionRequest(actionType, "", request.durationTicks(), request.durationSeconds()));
+    }
+
+    private String readNavigationCheck(MinecraftClient client) {
+        if (client == null || client.player == null || client.world == null) {
+            return "nav unavailable";
+        }
+
+        BlockPos current = client.player.getBlockPos();
+        return "nav current=" + navigationGrid.evaluate(client.world, current).label()
+                + " north=" + navigationGrid.evaluate(client.world, current.north()).label()
+                + " east=" + navigationGrid.evaluate(client.world, current.east()).label()
+                + " south=" + navigationGrid.evaluate(client.world, current.south()).label()
+                + " west=" + navigationGrid.evaluate(client.world, current.west()).label();
     }
 }

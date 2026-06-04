@@ -7,6 +7,7 @@ public final class CommandHelp {
     private static final List<String> VISIBLE_COMMANDS = List.of(
             "status",
             "nearby",
+            "nav check",
             "help",
             "stop",
             "forward",
