@@ -31,8 +31,22 @@ public class BrainLoop {
                 state.queueChatMessage(worldSensors.readNearby(client));
             } else if ("invalid_duration".equals(request.command())) {
                 state.queueChatMessage("invalid duration");
+            } else if ("invalid_transfer".equals(request.command())) {
+                state.queueChatMessage("transfer failed");
             } else if ("stop".equals(request.command())) {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.STOP, ""));
+            } else if ("deposit".equals(request.command())) {
+                state.queueAction(ActionRequest.itemTransfer(
+                        ActionRequest.ActionType.DEPOSIT_ITEM,
+                        request.itemId(),
+                        request.requestedCount()
+                ));
+            } else if ("withdraw".equals(request.command())) {
+                state.queueAction(ActionRequest.itemTransfer(
+                        ActionRequest.ActionType.WITHDRAW_ITEM,
+                        request.itemId(),
+                        request.requestedCount()
+                ));
             } else if ("forward".equals(request.command())) {
                 queueMovement(ActionRequest.ActionType.FORWARD, request);
             } else if ("back".equals(request.command())) {

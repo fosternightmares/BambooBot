@@ -14,7 +14,9 @@ public class ActionRequest {
         FOLLOW_PLAYER,
         INTERACT_TARGETED_BLOCK,
         CLOSE_CURRENT_SCREEN,
-        CAPTURE_CONTAINER_SNAPSHOT
+        CAPTURE_CONTAINER_SNAPSHOT,
+        DEPOSIT_ITEM,
+        WITHDRAW_ITEM
     }
 
     public enum ActionStatus {
@@ -31,26 +33,39 @@ public class ActionRequest {
     private final int durationTicks;
     private final int durationSeconds;
     private final LookedAtBlock targetedBlock;
+    private final String itemId;
+    private final int requestedCount;
 
     public ActionRequest(ActionType actionType, String actionData) {
-        this(actionType, actionData, 0, 0, null);
+        this(actionType, actionData, 0, 0, null, "", 0);
     }
 
     public ActionRequest(ActionType actionType, String actionData, int durationTicks, int durationSeconds) {
-        this(actionType, actionData, durationTicks, durationSeconds, null);
+        this(actionType, actionData, durationTicks, durationSeconds, null, "", 0);
     }
 
     public ActionRequest(ActionType actionType, LookedAtBlock targetedBlock) {
-        this(actionType, "", 0, 0, targetedBlock);
+        this(actionType, "", 0, 0, targetedBlock, "", 0);
     }
 
     public ActionRequest(ActionType actionType, String actionData, int durationTicks, int durationSeconds, LookedAtBlock targetedBlock) {
+        this(actionType, actionData, durationTicks, durationSeconds, targetedBlock, "", 0);
+    }
+
+    private ActionRequest(ActionType actionType, String actionData, int durationTicks, int durationSeconds,
+                          LookedAtBlock targetedBlock, String itemId, int requestedCount) {
         this.actionType = actionType;
         this.actionStatus = ActionStatus.IDLE;
         this.actionData = actionData;
         this.durationTicks = durationTicks;
         this.durationSeconds = durationSeconds;
         this.targetedBlock = targetedBlock;
+        this.itemId = itemId;
+        this.requestedCount = requestedCount;
+    }
+
+    public static ActionRequest itemTransfer(ActionType actionType, String itemId, int requestedCount) {
+        return new ActionRequest(actionType, "", 0, 0, null, itemId, requestedCount);
     }
 
     public ActionType actionType() {
@@ -79,5 +94,13 @@ public class ActionRequest {
 
     public LookedAtBlock targetedBlock() {
         return targetedBlock;
+    }
+
+    public String itemId() {
+        return itemId;
+    }
+
+    public int requestedCount() {
+        return requestedCount;
     }
 }

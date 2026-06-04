@@ -98,6 +98,14 @@ public final class ChatHandler {
 
         String[] parts = command.split("\\s+");
 
+        if ("deposit".equals(parts[0]) || "withdraw".equals(parts[0])) {
+            if (parts.length != 3) {
+                return new CommandRequest("invalid_transfer");
+            }
+
+            return parseItemTransfer(parts[0], parts[1], parts[2]);
+        }
+
         if (parts.length > 1 && isMovementCommand(parts[0])) {
             if (parts.length != 2) {
                 return new CommandRequest("invalid_duration");
@@ -135,6 +143,20 @@ public final class ChatHandler {
             return CommandRequest.timedMovement(command, durationSeconds);
         } catch (NumberFormatException exception) {
             return new CommandRequest("invalid_duration");
+        }
+    }
+
+    private static CommandRequest parseItemTransfer(String command, String itemId, String countText) {
+        try {
+            int requestedCount = Integer.parseInt(countText);
+
+            if (requestedCount <= 0) {
+                return new CommandRequest("invalid_transfer");
+            }
+
+            return CommandRequest.itemTransfer(command, itemId, requestedCount);
+        } catch (NumberFormatException exception) {
+            return new CommandRequest("invalid_transfer");
         }
     }
 }

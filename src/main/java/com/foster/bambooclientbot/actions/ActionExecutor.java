@@ -3,15 +3,19 @@ package com.foster.bambooclientbot.actions;
 import com.foster.bambooclientbot.state.BotState;
 import com.foster.bambooclientbot.state.ContainerSnapshot;
 import com.foster.bambooclientbot.state.LookedAtBlock;
+import com.foster.bambooclientbot.state.TransferResult;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.option.GameOptions;
 import net.minecraft.client.option.KeyBinding;
+import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
+import net.minecraft.screen.ScreenHandler;
 import net.minecraft.screen.slot.Slot;
+import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
@@ -91,6 +95,10 @@ public class ActionExecutor {
                 closeCurrentScreen(client, request);
             } else if (request.actionType() == ActionRequest.ActionType.CAPTURE_CONTAINER_SNAPSHOT) {
                 captureContainerSnapshot(client, request);
+            } else if (request.actionType() == ActionRequest.ActionType.DEPOSIT_ITEM) {
+                transferItems(client, request, "deposit", true);
+            } else if (request.actionType() == ActionRequest.ActionType.WITHDRAW_ITEM) {
+                transferItems(client, request, "withdraw", false);
             }
         } catch (Exception exception) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
@@ -130,6 +138,222 @@ public class ActionExecutor {
         request.setStatus(ActionRequest.ActionStatus.COMPLETE);
         state.setLastActionResult(request.actionType().name(), "success", "");
         state.queueChatMessage("snapshot captured");
+    }
+
+    private void transferItems(MinecraftClient client, ActionRequest request, String operation, boolean deposit) {
+        String normalizedItemId = normalizeItemId(request.itemId());
+
+        if (client == null || client.player == null || client.interactionManager == null
+                || !(client.currentScreen instanceof HandledScreen<?> handledScreen)) {
+            failTransfer(request, operation, normalizedItemId, 0, "container_not_open");
+            return;
+        }
+
+        ScreenHandler handler = handledScreen.getScreenHandler();
+
+        if (!handler.getCursorStack().isEmpty()) {
+            failTransfer(request, operation, normalizedItemId, 0, "transfer_failed");
+            return;
+        }
+
+        List<Slot> sourceSlots = transferSlots(handler.slots, deposit);
+        List<Slot> targetSlots = transferSlots(handler.slots, !deposit);
+        int available = countMatchingItems(sourceSlots, normalizedItemId);
+
+        if (available <= 0) {
+            failTransfer(request, operation, normalizedItemId, 0, "item_not_found");
+            return;
+        }
+
+        int capacity = countTargetCapacity(targetSlots, normalizedItemId);
+
+        if (capacity <= 0) {
+            failTransfer(request, operation, normalizedItemId, 0, "inventory_full");
+            return;
+        }
+
+        int desiredCount = Math.min(request.requestedCount(), Math.min(available, capacity));
+        int movedCount = moveExactCount(client, handler, sourceSlots, targetSlots, normalizedItemId, desiredCount);
+
+        if (movedCount <= 0) {
+            failTransfer(request, operation, normalizedItemId, 0, "transfer_failed");
+            return;
+        }
+
+        if (!handler.getCursorStack().isEmpty()) {
+            failTransfer(request, operation, normalizedItemId, movedCount, "transfer_failed");
+            return;
+        }
+
+        String result = movedCount == request.requestedCount() ? "success" : "partial";
+        request.setStatus(ActionRequest.ActionStatus.COMPLETE);
+        state.setLastActionResult(request.actionType().name(), result, "");
+        state.setLastTransferResult(new TransferResult(
+                operation,
+                normalizedItemId,
+                request.requestedCount(),
+                movedCount,
+                result,
+                ""
+        ));
+        state.queueChatMessage("transferred " + movedCount + " " + compactItemId(normalizedItemId));
+    }
+
+    private void failTransfer(ActionRequest request, String operation, String itemId, int movedCount, String reason) {
+        request.setStatus(ActionRequest.ActionStatus.FAILED);
+        state.setLastActionResult(request.actionType().name(), "failed", reason);
+        state.setLastTransferResult(new TransferResult(
+                operation,
+                itemId,
+                request.requestedCount(),
+                movedCount,
+                "failed",
+                reason
+        ));
+        state.queueChatMessage("transfer failed");
+    }
+
+    private List<Slot> transferSlots(List<Slot> slots, boolean playerInventorySlots) {
+        List<Slot> matchingSlots = new ArrayList<>();
+
+        for (Slot slot : slots) {
+            if (isPlayerInventorySlot(slot) == playerInventorySlots) {
+                matchingSlots.add(slot);
+            }
+        }
+
+        return matchingSlots;
+    }
+
+    private boolean isPlayerInventorySlot(Slot slot) {
+        return slot.inventory instanceof PlayerInventory;
+    }
+
+    private int countMatchingItems(List<Slot> slots, String itemId) {
+        int count = 0;
+
+        for (Slot slot : slots) {
+            ItemStack stack = slot.getStack();
+
+            if (!stack.isEmpty() && matchesItem(stack, itemId)) {
+                count += stack.getCount();
+            }
+        }
+
+        return count;
+    }
+
+    private int countTargetCapacity(List<Slot> slots, String itemId) {
+        int capacity = 0;
+
+        for (Slot slot : slots) {
+            ItemStack stack = slot.getStack();
+
+            if (stack.isEmpty()) {
+                capacity += slot.getMaxItemCount();
+            } else if (matchesItem(stack, itemId)) {
+                capacity += Math.max(0, slot.getMaxItemCount(stack) - stack.getCount());
+            }
+        }
+
+        return capacity;
+    }
+
+    private int moveExactCount(MinecraftClient client, ScreenHandler handler, List<Slot> sourceSlots,
+                               List<Slot> targetSlots, String itemId, int desiredCount) {
+        int movedCount = 0;
+
+        for (Slot sourceSlot : sourceSlots) {
+            if (movedCount >= desiredCount) {
+                break;
+            }
+
+            ItemStack sourceStack = sourceSlot.getStack();
+
+            if (sourceStack.isEmpty() || !matchesItem(sourceStack, itemId) || !sourceSlot.canTakeItems(client.player)) {
+                continue;
+            }
+
+            int toMoveFromSlot = Math.min(sourceStack.getCount(), desiredCount - movedCount);
+            clickSlot(client, handler, sourceSlot, 0);
+
+            int placedFromSlot = 0;
+
+            while (placedFromSlot < toMoveFromSlot && !handler.getCursorStack().isEmpty()) {
+                Slot targetSlot = findTargetSlotForOne(targetSlots, handler.getCursorStack());
+
+                if (targetSlot == null) {
+                    break;
+                }
+
+                clickSlot(client, handler, targetSlot, 1);
+                placedFromSlot++;
+            }
+
+            movedCount += placedFromSlot;
+
+            if (!handler.getCursorStack().isEmpty()) {
+                clickSlot(client, handler, sourceSlot, 0);
+            }
+
+            if (!handler.getCursorStack().isEmpty()) {
+                break;
+            }
+        }
+
+        return movedCount;
+    }
+
+    private Slot findTargetSlotForOne(List<Slot> targetSlots, ItemStack cursorStack) {
+        for (Slot targetSlot : targetSlots) {
+            if (canAcceptOne(targetSlot, cursorStack)) {
+                return targetSlot;
+            }
+        }
+
+        return null;
+    }
+
+    private boolean canAcceptOne(Slot targetSlot, ItemStack cursorStack) {
+        if (cursorStack.isEmpty() || !targetSlot.canInsert(cursorStack)) {
+            return false;
+        }
+
+        ItemStack targetStack = targetSlot.getStack();
+
+        if (targetStack.isEmpty()) {
+            return true;
+        }
+
+        return targetStack.getItem() == cursorStack.getItem()
+                && targetStack.getCount() < targetSlot.getMaxItemCount(cursorStack);
+    }
+
+    private void clickSlot(MinecraftClient client, ScreenHandler handler, Slot slot, int button) {
+        client.interactionManager.clickSlot(handler.syncId, slot.id, button, SlotActionType.PICKUP, client.player);
+    }
+
+    private boolean matchesItem(ItemStack stack, String itemId) {
+        String stackItemId = Registries.ITEM.getId(stack.getItem()).toString();
+        return stackItemId.equals(itemId);
+    }
+
+    private String normalizeItemId(String itemId) {
+        String normalized = itemId.toLowerCase(Locale.ROOT);
+
+        if (normalized.contains(":")) {
+            return normalized;
+        }
+
+        return "minecraft:" + normalized;
+    }
+
+    private String compactItemId(String itemId) {
+        if (itemId.startsWith("minecraft:")) {
+            return itemId.substring("minecraft:".length());
+        }
+
+        return itemId;
     }
 
     private void interactTargetedBlock(MinecraftClient client, ActionRequest request) {
