@@ -5,6 +5,7 @@ import com.foster.bambooclientbot.commands.CommandRequest;
 import com.foster.bambooclientbot.sensors.PlayerSensors;
 import com.foster.bambooclientbot.sensors.WorldSensors;
 import com.foster.bambooclientbot.state.BotState;
+import com.foster.bambooclientbot.state.ContainerSnapshot;
 import net.minecraft.client.MinecraftClient;
 
 public class BrainLoop {
@@ -48,9 +49,26 @@ public class BrainLoop {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.INTERACT_TARGETED_BLOCK, state.lookedAtBlock()));
             } else if ("close".equals(request.command()) || "close screen".equals(request.command()) || "close menu".equals(request.command())) {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.CLOSE_CURRENT_SCREEN, ""));
+            } else if ("snapshot details".equals(request.command()) || "container details".equals(request.command())) {
+                queueContainerSnapshotDetails();
             } else if ("inspect container".equals(request.command()) || "container".equals(request.command()) || "snapshot".equals(request.command())) {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.CAPTURE_CONTAINER_SNAPSHOT, ""));
             }
+        }
+    }
+
+    private void queueContainerSnapshotDetails() {
+        ContainerSnapshot snapshot = state.containerSnapshot();
+
+        if (snapshot == null) {
+            state.queueChatMessage("snapshot_missing");
+            return;
+        }
+
+        state.queueChatMessage("snapshot slotCount=" + snapshot.slotCount() + " occupied=" + snapshot.occupiedSlots());
+
+        for (ContainerSnapshot.Entry entry : snapshot.entries()) {
+            state.queueChatMessage(entry.slot() + ":" + entry.itemId() + "x" + entry.count());
         }
     }
 

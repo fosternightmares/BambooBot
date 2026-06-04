@@ -1,6 +1,7 @@
 package com.foster.bambooclientbot.sensors;
 
 import com.foster.bambooclientbot.state.BotState;
+import com.foster.bambooclientbot.state.ContainerSnapshot;
 import com.foster.bambooclientbot.state.LookedAtBlock;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
@@ -28,10 +29,20 @@ public class PlayerSensors {
                 + " held=" + heldItem
                 + " " + lookingAtBlockStatus(state)
                 + " " + state.containerState().format()
-                + " containerSnapshotSlots=" + state.containerSnapshot().slotCount()
-                + " containerSnapshotOccupied=" + state.containerSnapshot().occupiedSlots()
+                + " " + containerSnapshotStatus(state)
                 + " activeAction=" + state.activeAction()
                 + " " + state.lastActionStatus();
+    }
+
+    private String containerSnapshotStatus(BotState state) {
+        ContainerSnapshot snapshot = state.containerSnapshot();
+
+        if (snapshot == null) {
+            return "containerSnapshotSlots=0 containerSnapshotOccupied=0";
+        }
+
+        return "containerSnapshotSlots=" + snapshot.slotCount()
+                + " containerSnapshotOccupied=" + snapshot.occupiedSlots();
     }
 
     private String lookingAtBlockStatus(BotState state) {

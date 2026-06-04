@@ -11,7 +11,7 @@ public class BotState {
     private final Queue<ActionRequest> pendingActions = new ArrayDeque<>();
     private LookedAtBlock lookedAtBlock;
     private ContainerState containerState = ContainerState.closed();
-    private ContainerSnapshot containerSnapshot = new ContainerSnapshot(0L, 0, java.util.List.of());
+    private ContainerSnapshot containerSnapshot;
     private String activeAction = "none";
     private String lastAction = "none";
     private String lastActionResult = "none";
