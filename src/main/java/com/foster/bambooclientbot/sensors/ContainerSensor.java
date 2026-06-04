@@ -5,6 +5,7 @@ import com.foster.bambooclientbot.state.ContainerState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
+import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.registry.Registries;
 import net.minecraft.screen.ScreenHandlerType;
 import net.minecraft.util.Identifier;
@@ -17,6 +18,12 @@ public class ContainerSensor {
         }
 
         Screen screen = client.currentScreen;
+
+        if (!(screen instanceof HandledScreen<?>) || screen instanceof InventoryScreen) {
+            state.setContainerState(ContainerState.closed());
+            return;
+        }
+
         String title = screen.getTitle().getString();
         String type = screenType(screen);
         state.setContainerState(new ContainerState(true, type, title));
