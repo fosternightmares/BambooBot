@@ -3,6 +3,10 @@ package com.foster.bambooclientbot.actions;
 public class ActionRequest {
     public enum ActionType {
         STOP,
+        FORWARD,
+        BACK,
+        LEFT,
+        RIGHT,
         LOOK_AT_PLAYER
     }
 
