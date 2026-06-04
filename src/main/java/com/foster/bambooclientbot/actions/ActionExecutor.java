@@ -12,6 +12,8 @@ public class ActionExecutor {
     private static final double LOOK_AT_RANGE = 32.0;
     private static final double APPROACH_TARGET_DISTANCE = 2.5;
     private static final double FOLLOW_DISTANCE = 3.0;
+    private static final double FOLLOW_SPRINT_ENABLE_DISTANCE = 6.0;
+    private static final double FOLLOW_SPRINT_DISABLE_DISTANCE = 4.0;
 
     private final BotState state;
     private ActionRequest timedMovement;
@@ -143,6 +145,8 @@ public class ActionExecutor {
         } else {
             clearDirectionalKeys(client.options);
         }
+
+        updateFollowSprint(client.options, player.distanceTo(target));
     }
 
     private void tickTimedMovement(MinecraftClient client) {
@@ -179,6 +183,7 @@ public class ActionExecutor {
         activeFollow = null;
         GameOptions options = client.options;
         clearDirectionalKeys(options);
+        options.sprintKey.setPressed(false);
         movementKey(options, request.actionType()).setPressed(true);
 
         if (request.durationTicks() > 0) {
@@ -220,6 +225,7 @@ public class ActionExecutor {
         timedMovementTicksRemaining = 0;
         activeFollow = null;
         clearDirectionalKeys(client.options);
+        client.options.sprintKey.setPressed(false);
         rotateToward(player, target.getEyePos());
         client.options.forwardKey.setPressed(true);
         activeApproach = request;
@@ -246,12 +252,14 @@ public class ActionExecutor {
         timedMovementTicksRemaining = 0;
         activeApproach = null;
         clearDirectionalKeys(client.options);
+        client.options.sprintKey.setPressed(false);
         rotateToward(player, target.getEyePos());
 
         if (player.distanceTo(target) > FOLLOW_DISTANCE) {
             client.options.forwardKey.setPressed(true);
         }
 
+        updateFollowSprint(client.options, player.distanceTo(target));
         activeFollow = request;
         state.queueChatMessage("following " + request.actionData());
     }
@@ -268,6 +276,14 @@ public class ActionExecutor {
         options.sprintKey.setPressed(false);
         options.attackKey.setPressed(false);
         options.useKey.setPressed(false);
+    }
+
+    private void updateFollowSprint(GameOptions options, double targetDistance) {
+        if (targetDistance > FOLLOW_SPRINT_ENABLE_DISTANCE) {
+            options.sprintKey.setPressed(true);
+        } else if (targetDistance <= FOLLOW_SPRINT_DISABLE_DISTANCE) {
+            options.sprintKey.setPressed(false);
+        }
     }
 
     private void clearDirectionalKeys(GameOptions options) {
