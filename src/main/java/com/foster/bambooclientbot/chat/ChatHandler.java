@@ -67,6 +67,16 @@ public final class ChatHandler {
             return new CommandRequest("look_at", targetPlayer);
         }
 
+        if (command.startsWith("approach ")) {
+            String targetPlayer = command.substring("approach ".length()).trim();
+
+            if (targetPlayer.isEmpty()) {
+                return null;
+            }
+
+            return new CommandRequest("approach", targetPlayer);
+        }
+
         String[] parts = command.split("\\s+");
 
         if (parts.length > 1 && isMovementCommand(parts[0])) {

@@ -40,6 +40,8 @@ public class BrainLoop {
                 queueMovement(ActionRequest.ActionType.RIGHT, request);
             } else if ("look_at".equals(request.command())) {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.LOOK_AT_PLAYER, request.targetPlayer()));
+            } else if ("approach".equals(request.command())) {
+                state.queueAction(new ActionRequest(ActionRequest.ActionType.APPROACH_PLAYER, request.targetPlayer()));
             }
         }
     }

@@ -7,7 +7,8 @@ public class ActionRequest {
         BACK,
         LEFT,
         RIGHT,
-        LOOK_AT_PLAYER
+        LOOK_AT_PLAYER,
+        APPROACH_PLAYER
     }
 
     public enum ActionStatus {
