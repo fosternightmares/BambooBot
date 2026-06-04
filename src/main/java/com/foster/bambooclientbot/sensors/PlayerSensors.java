@@ -27,6 +27,7 @@ public class PlayerSensors {
                 + " food=" + player.getHungerManager().getFoodLevel()
                 + " held=" + heldItem
                 + " " + lookingAtBlockStatus(state)
+                + " " + state.containerState().format()
                 + " activeAction=" + state.activeAction()
                 + " " + state.lastActionStatus();
     }

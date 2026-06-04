@@ -10,6 +10,7 @@ public class BotState {
     private final Queue<String> pendingChatMessages = new ArrayDeque<>();
     private final Queue<ActionRequest> pendingActions = new ArrayDeque<>();
     private LookedAtBlock lookedAtBlock;
+    private ContainerState containerState = ContainerState.closed();
     private String activeAction = "none";
     private String lastAction = "none";
     private String lastActionResult = "none";
@@ -46,6 +47,14 @@ public class BotState {
 
     public LookedAtBlock lookedAtBlock() {
         return lookedAtBlock;
+    }
+
+    public void setContainerState(ContainerState containerState) {
+        this.containerState = containerState;
+    }
+
+    public ContainerState containerState() {
+        return containerState;
     }
 
     public void setActiveAction(String activeAction) {

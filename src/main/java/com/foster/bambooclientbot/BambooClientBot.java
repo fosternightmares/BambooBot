@@ -4,6 +4,7 @@ import com.foster.bambooclientbot.actions.ActionExecutor;
 import com.foster.bambooclientbot.brain.BrainLoop;
 import com.foster.bambooclientbot.chat.ChatActionExecutor;
 import com.foster.bambooclientbot.chat.ChatHandler;
+import com.foster.bambooclientbot.sensors.ContainerSensor;
 import com.foster.bambooclientbot.sensors.LookingAtBlockSensor;
 import com.foster.bambooclientbot.sensors.PlayerSensors;
 import com.foster.bambooclientbot.sensors.WorldSensors;
@@ -24,12 +25,14 @@ public class BambooClientBot implements ClientModInitializer {
         ActionExecutor actionExecutor = new ActionExecutor(state);
         ChatActionExecutor chatActionExecutor = new ChatActionExecutor(state);
         LookingAtBlockSensor lookingAtBlockSensor = new LookingAtBlockSensor();
+        ContainerSensor containerSensor = new ContainerSensor();
 
         ChatHandler.register(state);
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             lookingAtBlockSensor.update(client, state);
             brainLoop.tick(client);
             actionExecutor.tick(client);
+            containerSensor.update(client, state);
             chatActionExecutor.tick(client);
         });
 
