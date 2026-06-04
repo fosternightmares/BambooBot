@@ -3,6 +3,7 @@ package com.foster.bambooclientbot.chat;
 import com.foster.bambooclientbot.BambooClientBot;
 import com.foster.bambooclientbot.commands.CommandRequest;
 import com.foster.bambooclientbot.state.BotState;
+import com.mojang.authlib.GameProfile;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.network.message.SignedMessage;
@@ -18,7 +19,7 @@ public final class ChatHandler {
     public static void register(BotState state) {
         ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) -> {
             String botName = botName(MinecraftClient.getInstance());
-            CommandRequest command = parseCommand(messageContent(message, signedMessage), botName);
+            CommandRequest command = parseCommand(messageContent(message, signedMessage), botName, senderName(sender));
 
             if (command == null) {
                 return;
@@ -37,6 +38,14 @@ public final class ChatHandler {
         return client.getSession().getUsername();
     }
 
+    private static String senderName(GameProfile sender) {
+        if (sender == null) {
+            return "";
+        }
+
+        return sender.name();
+    }
+
     private static String messageContent(Text message, SignedMessage signedMessage) {
         if (signedMessage != null) {
             return signedMessage.getSignedContent();
@@ -45,7 +54,7 @@ public final class ChatHandler {
         return message.getString();
     }
 
-    private static CommandRequest parseCommand(String message, String botName) {
+    private static CommandRequest parseCommand(String message, String botName, String senderName) {
         String content = message.trim();
         String command;
 
@@ -64,7 +73,7 @@ public final class ChatHandler {
                 return null;
             }
 
-            return new CommandRequest("look_at", targetPlayer);
+            return new CommandRequest("look_at", resolvePlayerArg(targetPlayer, senderName));
         }
 
         if (command.startsWith("approach ")) {
@@ -74,7 +83,7 @@ public final class ChatHandler {
                 return null;
             }
 
-            return new CommandRequest("approach", targetPlayer);
+            return new CommandRequest("approach", resolvePlayerArg(targetPlayer, senderName));
         }
 
         if (command.startsWith("follow ")) {
@@ -84,7 +93,7 @@ public final class ChatHandler {
                 return null;
             }
 
-            return new CommandRequest("follow", targetPlayer);
+            return new CommandRequest("follow", resolvePlayerArg(targetPlayer, senderName));
         }
 
         String[] parts = command.split("\\s+");
@@ -98,6 +107,14 @@ public final class ChatHandler {
         }
 
         return new CommandRequest(command);
+    }
+
+    private static String resolvePlayerArg(String arg, String senderName) {
+        if ("me".equalsIgnoreCase(arg) && !senderName.isBlank()) {
+            return senderName;
+        }
+
+        return arg;
     }
 
     private static boolean isMovementCommand(String command) {
