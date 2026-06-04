@@ -127,7 +127,7 @@ public class BrainLoop {
     }
 
     private String formatSnapshotEntry(ContainerSnapshot.Entry entry) {
-        return entry.slot() + ":" + compactItemId(entry.itemId()) + "x" + entry.count();
+        return "slot" + (entry.slot() + 1) + ":" + compactItemId(entry.itemId()) + "x" + entry.count();
     }
 
     private String compactItemId(String itemId) {

@@ -35,6 +35,7 @@ public class ActionExecutor {
     private static final double FOLLOW_SPRINT_ENABLE_DISTANCE = 6.0;
     private static final double FOLLOW_SPRINT_DISABLE_DISTANCE = 4.0;
     private static final int MAIN_INVENTORY_SLOT_COUNT = 36;
+    private static final int TOTAL_INVENTORY_SLOT_COUNT = 41;
     private static final int INVENTORY_DETAILS_MAX_LENGTH = 240;
 
     private final BotState state;
@@ -159,7 +160,7 @@ public class ActionExecutor {
 
         PlayerInventory inventory = client.player.getInventory();
         List<InventorySnapshot.Entry> entries = new ArrayList<>();
-        int slotCount = Math.min(MAIN_INVENTORY_SLOT_COUNT, inventory.size());
+        int slotCount = Math.min(TOTAL_INVENTORY_SLOT_COUNT, inventory.size());
 
         for (int slot = 0; slot < slotCount; slot++) {
             ItemStack stack = inventory.getStack(slot);
@@ -224,7 +225,26 @@ public class ActionExecutor {
     }
 
     private String formatInventoryEntry(InventorySnapshot.Entry entry) {
-        return entry.slot() + ":" + compactItemId(entry.itemId()) + "x" + entry.count();
+        return inventorySlotLabel(entry.slot()) + ":" + compactItemId(entry.itemId()) + "x" + entry.count();
+    }
+
+    private String inventorySlotLabel(int slot) {
+        if (slot >= 0 && slot < 9) {
+            return "hotbar" + (slot + 1);
+        }
+
+        if (slot >= 9 && slot < MAIN_INVENTORY_SLOT_COUNT) {
+            return "inv" + (slot - 8);
+        }
+
+        return switch (slot) {
+            case 36 -> "boots";
+            case 37 -> "leggings";
+            case 38 -> "chestplate";
+            case 39 -> "helmet";
+            case 40 -> "offhand";
+            default -> "slot" + slot;
+        };
     }
 
     private void transferItems(MinecraftClient client, ActionRequest request, String operation, boolean deposit) {
