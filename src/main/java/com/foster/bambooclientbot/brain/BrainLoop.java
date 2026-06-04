@@ -9,6 +9,8 @@ import com.foster.bambooclientbot.state.ContainerSnapshot;
 import net.minecraft.client.MinecraftClient;
 
 public class BrainLoop {
+    private static final int SNAPSHOT_DETAILS_MAX_LENGTH = 240;
+
     private final BotState state;
     private final PlayerSensors playerSensors;
     private final WorldSensors worldSensors;
@@ -65,11 +67,55 @@ public class BrainLoop {
             return;
         }
 
-        state.queueChatMessage("snapshot slotCount=" + snapshot.slotCount() + " occupied=" + snapshot.occupiedSlots());
+        state.queueChatMessage(formatContainerSnapshot(snapshot));
+    }
+
+    private String formatContainerSnapshot(ContainerSnapshot snapshot) {
+        String prefix = "snapshot slots=" + snapshot.slotCount() + " occupied=" + snapshot.occupiedSlots() + " [";
+        StringBuilder message = new StringBuilder(prefix);
+        int includedEntries = 0;
 
         for (ContainerSnapshot.Entry entry : snapshot.entries()) {
-            state.queueChatMessage(entry.slot() + ":" + entry.itemId() + "x" + entry.count());
+            String formattedEntry = formatSnapshotEntry(entry);
+            int separatorLength = includedEntries == 0 ? 0 : 1;
+            int remainingAfterEntry = snapshot.occupiedSlots() - includedEntries - 1;
+            String truncationSuffix = remainingAfterEntry > 0 ? ",...+" + remainingAfterEntry : "";
+            int suffixLength = truncationSuffix.length() + 1;
+
+            if (message.length() + separatorLength + formattedEntry.length() + suffixLength > SNAPSHOT_DETAILS_MAX_LENGTH) {
+                break;
+            }
+
+            if (includedEntries > 0) {
+                message.append(',');
+            }
+
+            message.append(formattedEntry);
+            includedEntries++;
         }
+
+        if (includedEntries < snapshot.occupiedSlots()) {
+            if (includedEntries > 0) {
+                message.append(',');
+            }
+
+            message.append("...+").append(snapshot.occupiedSlots() - includedEntries);
+        }
+
+        message.append(']');
+        return message.toString();
+    }
+
+    private String formatSnapshotEntry(ContainerSnapshot.Entry entry) {
+        return entry.slot() + ":" + compactItemId(entry.itemId()) + "x" + entry.count();
+    }
+
+    private String compactItemId(String itemId) {
+        if (itemId.startsWith("minecraft:")) {
+            return itemId.substring("minecraft:".length());
+        }
+
+        return itemId;
     }
 
     private void queueMovement(ActionRequest.ActionType actionType, CommandRequest request) {
