@@ -77,6 +77,16 @@ public final class ChatHandler {
             return new CommandRequest("approach", targetPlayer);
         }
 
+        if (command.startsWith("follow ")) {
+            String targetPlayer = command.substring("follow ".length()).trim();
+
+            if (targetPlayer.isEmpty()) {
+                return null;
+            }
+
+            return new CommandRequest("follow", targetPlayer);
+        }
+
         String[] parts = command.split("\\s+");
 
         if (parts.length > 1 && isMovementCommand(parts[0])) {

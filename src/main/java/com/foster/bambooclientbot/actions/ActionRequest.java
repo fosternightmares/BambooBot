@@ -8,7 +8,8 @@ public class ActionRequest {
         LEFT,
         RIGHT,
         LOOK_AT_PLAYER,
-        APPROACH_PLAYER
+        APPROACH_PLAYER,
+        FOLLOW_PLAYER
     }
 
     public enum ActionStatus {

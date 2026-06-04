@@ -11,11 +11,13 @@ import net.minecraft.util.math.Vec3d;
 public class ActionExecutor {
     private static final double LOOK_AT_RANGE = 32.0;
     private static final double APPROACH_TARGET_DISTANCE = 2.5;
+    private static final double FOLLOW_DISTANCE = 3.0;
 
     private final BotState state;
     private ActionRequest timedMovement;
     private int timedMovementTicksRemaining;
     private ActionRequest activeApproach;
+    private ActionRequest activeFollow;
 
     public ActionExecutor(BotState state) {
         this.state = state;
@@ -30,6 +32,7 @@ public class ActionExecutor {
         }
 
         tickApproach(client);
+        tickFollow(client);
         tickTimedMovement(client);
     }
 
@@ -39,6 +42,7 @@ public class ActionExecutor {
         try {
             if (request.actionType() == ActionRequest.ActionType.STOP) {
                 activeApproach = null;
+                activeFollow = null;
                 timedMovement = null;
                 timedMovementTicksRemaining = 0;
                 stop(client);
@@ -62,6 +66,8 @@ public class ActionExecutor {
                 }
             } else if (request.actionType() == ActionRequest.ActionType.APPROACH_PLAYER) {
                 startApproach(client, request);
+            } else if (request.actionType() == ActionRequest.ActionType.FOLLOW_PLAYER) {
+                startFollow(client, request);
             }
         } catch (Exception exception) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
@@ -105,6 +111,40 @@ public class ActionExecutor {
         client.options.forwardKey.setPressed(true);
     }
 
+    private void tickFollow(MinecraftClient client) {
+        if (activeFollow == null) {
+            return;
+        }
+
+        if (client == null || client.player == null || client.world == null || client.options == null) {
+            activeFollow.setStatus(ActionRequest.ActionStatus.FAILED);
+            activeFollow = null;
+            stop(client);
+            state.queueChatMessage("action failed");
+            return;
+        }
+
+        ClientPlayerEntity player = client.player;
+        AbstractClientPlayerEntity target = findTargetPlayer(client, player, activeFollow.actionData());
+
+        if (target == null) {
+            activeFollow.setStatus(ActionRequest.ActionStatus.FAILED);
+            activeFollow = null;
+            stop(client);
+            state.queueChatMessage("player not found");
+            return;
+        }
+
+        rotateToward(player, target.getEyePos());
+
+        if (player.distanceTo(target) > FOLLOW_DISTANCE) {
+            clearDirectionalKeys(client.options);
+            client.options.forwardKey.setPressed(true);
+        } else {
+            clearDirectionalKeys(client.options);
+        }
+    }
+
     private void tickTimedMovement(MinecraftClient client) {
         if (timedMovement == null) {
             return;
@@ -136,6 +176,7 @@ public class ActionExecutor {
         }
 
         activeApproach = null;
+        activeFollow = null;
         GameOptions options = client.options;
         clearDirectionalKeys(options);
         movementKey(options, request.actionType()).setPressed(true);
@@ -177,11 +218,42 @@ public class ActionExecutor {
 
         timedMovement = null;
         timedMovementTicksRemaining = 0;
+        activeFollow = null;
         clearDirectionalKeys(client.options);
         rotateToward(player, target.getEyePos());
         client.options.forwardKey.setPressed(true);
         activeApproach = request;
         state.queueChatMessage("approaching " + request.actionData());
+    }
+
+    private void startFollow(MinecraftClient client, ActionRequest request) {
+        if (client == null || client.player == null || client.world == null || client.options == null) {
+            request.setStatus(ActionRequest.ActionStatus.FAILED);
+            state.queueChatMessage("action failed");
+            return;
+        }
+
+        ClientPlayerEntity player = client.player;
+        AbstractClientPlayerEntity target = findTargetPlayer(client, player, request.actionData());
+
+        if (target == null) {
+            request.setStatus(ActionRequest.ActionStatus.FAILED);
+            state.queueChatMessage("player not found");
+            return;
+        }
+
+        timedMovement = null;
+        timedMovementTicksRemaining = 0;
+        activeApproach = null;
+        clearDirectionalKeys(client.options);
+        rotateToward(player, target.getEyePos());
+
+        if (player.distanceTo(target) > FOLLOW_DISTANCE) {
+            client.options.forwardKey.setPressed(true);
+        }
+
+        activeFollow = request;
+        state.queueChatMessage("following " + request.actionData());
     }
 
     private void stop(MinecraftClient client) {
