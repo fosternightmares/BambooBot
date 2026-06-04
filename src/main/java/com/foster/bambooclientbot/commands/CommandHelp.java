@@ -22,6 +22,8 @@ public final class CommandHelp {
             "autouse off",
             "autosneak on",
             "autosneak off",
+            "farm off",
+            "actions off",
             "open",
             "close",
             "snapshot",

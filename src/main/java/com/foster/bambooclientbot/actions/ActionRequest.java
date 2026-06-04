@@ -24,7 +24,8 @@ public class ActionRequest {
         DROP_ITEM,
         SET_AUTOSWING,
         SET_AUTOUSE,
-        SET_AUTOSNEAK
+        SET_AUTOSNEAK,
+        DISABLE_FARM_ACTIONS
     }
 
     public enum ActionStatus {

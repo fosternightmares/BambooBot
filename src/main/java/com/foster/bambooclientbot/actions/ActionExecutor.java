@@ -136,6 +136,8 @@ public class ActionExecutor {
                 setAutoUse(client, request);
             } else if (request.actionType() == ActionRequest.ActionType.SET_AUTOSNEAK) {
                 setAutoSneak(client, request);
+            } else if (request.actionType() == ActionRequest.ActionType.DISABLE_FARM_ACTIONS) {
+                disableFarmActions(client, request);
             }
         } catch (Exception exception) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
@@ -211,6 +213,22 @@ public class ActionExecutor {
         request.setStatus(ActionRequest.ActionStatus.COMPLETE);
         state.setLastActionResult(request.actionType().name(), enabled ? "enabled" : "disabled", "");
         state.queueChatMessage(enabled ? "autosneak enabled" : "autosneak disabled");
+    }
+
+    private void disableFarmActions(MinecraftClient client, ActionRequest request) {
+        state.setAutoSwing(false);
+        state.setLastSwingTimeMillis(0L);
+        state.setAutoUse(false);
+        state.setAutoSneak(false);
+
+        if (client != null && client.options != null) {
+            client.options.useKey.setPressed(false);
+            client.options.sneakKey.setPressed(false);
+        }
+
+        request.setStatus(ActionRequest.ActionStatus.COMPLETE);
+        state.setLastActionResult(request.actionType().name(), "success", "");
+        state.queueChatMessage("farm actions disabled");
     }
 
     private void captureInventorySnapshot(MinecraftClient client, ActionRequest request, boolean includeDetails) {
