@@ -21,6 +21,8 @@ public class BotState {
     private DropResult lastDropResult;
     private GotoTarget activeGotoTarget;
     private double activeGotoDistance;
+    private int activeGotoRouteIndex;
+    private int activeGotoRouteLength;
     private GotoResult lastGotoResult;
     private boolean followJump;
     private boolean autoSwing;
@@ -139,14 +141,18 @@ public class BotState {
         return lastDropResult.format();
     }
 
-    public void setActiveGoto(GotoTarget target, double distance) {
+    public void setActiveGoto(GotoTarget target, double distance, int routeIndex, int routeLength) {
         this.activeGotoTarget = target;
         this.activeGotoDistance = distance;
+        this.activeGotoRouteIndex = routeIndex;
+        this.activeGotoRouteLength = routeLength;
     }
 
     public void clearActiveGoto() {
         activeGotoTarget = null;
         activeGotoDistance = 0.0;
+        activeGotoRouteIndex = 0;
+        activeGotoRouteLength = 0;
     }
 
     public void setLastGotoResult(GotoResult lastGotoResult) {
@@ -161,6 +167,8 @@ public class BotState {
         }
 
         return "activeGoto=true target=" + activeGotoTarget.format()
+                + " routeIndex=" + activeGotoRouteIndex
+                + " routeLength=" + activeGotoRouteLength
                 + " distance=" + String.format(java.util.Locale.ROOT, "%.1f", activeGotoDistance)
                 + " " + lastGoto;
     }

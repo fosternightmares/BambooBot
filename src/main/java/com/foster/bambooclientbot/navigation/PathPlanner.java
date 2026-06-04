@@ -68,7 +68,7 @@ public class PathPlanner {
 
             if (current.position().equals(target)) {
                 List<BlockPos> path = reconstructPath(cameFrom, target);
-                return PathPlanResult.found(path.size(), pathLength(path));
+                return PathPlanResult.found(path, pathLength(path));
             }
 
             for (BlockPos neighbor : neighbors(world, start, current.position())) {

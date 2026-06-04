@@ -1,6 +1,9 @@
 package com.foster.bambooclientbot.actions;
 
 import com.foster.bambooclientbot.commands.ItemResolver;
+import com.foster.bambooclientbot.navigation.NavigationGrid;
+import com.foster.bambooclientbot.navigation.PathPlanResult;
+import com.foster.bambooclientbot.navigation.PathPlanner;
 import com.foster.bambooclientbot.state.BotState;
 import com.foster.bambooclientbot.state.ContainerSnapshot;
 import com.foster.bambooclientbot.state.DropResult;
@@ -39,6 +42,7 @@ public class ActionExecutor {
     private static final double FOLLOW_SPRINT_DISABLE_DISTANCE = 4.0;
     private static final double GOTO_HORIZONTAL_ARRIVAL_DISTANCE = 1.5;
     private static final double GOTO_VERTICAL_ARRIVAL_DISTANCE = 2.0;
+    private static final double GOTO_WAYPOINT_DISTANCE = 0.8;
     private static final double GOTO_JUMP_TARGET_Y_DELTA = 0.5;
     private static final double FOLLOW_JUMP_TARGET_Y_DELTA = 0.5;
     private static final int FOLLOW_JUMP_COOLDOWN_TICKS = 8;
@@ -48,11 +52,14 @@ public class ActionExecutor {
     private static final int INVENTORY_DETAILS_MAX_LENGTH = 240;
 
     private final BotState state;
+    private final PathPlanner pathPlanner = new PathPlanner(new NavigationGrid());
     private ActionRequest timedMovement;
     private int timedMovementTicksRemaining;
     private ActionRequest activeApproach;
     private ActionRequest activeFollow;
     private ActionRequest activeGoto;
+    private List<BlockPos> activeGotoRoute = List.of();
+    private int activeGotoRouteIndex;
     private int followJumpCooldownTicks;
 
     public ActionExecutor(BotState state) {
@@ -985,7 +992,7 @@ public class ActionExecutor {
 
         GotoTarget target = activeGoto.gotoTarget();
 
-        if (client == null || client.player == null || client.options == null || target == null) {
+        if (client == null || client.player == null || client.options == null || target == null || activeGotoRoute.isEmpty()) {
             failGoto(client, "movement_unavailable");
             return;
         }
@@ -993,7 +1000,7 @@ public class ActionExecutor {
         ClientPlayerEntity player = client.player;
         double horizontalDistance = horizontalDistance(player, target);
         double verticalDifference = Math.abs(player.getY() - target.y());
-        state.setActiveGoto(target, horizontalDistance);
+        state.setActiveGoto(target, horizontalDistance, activeGotoRouteIndex, activeGotoRoute.size());
 
         if (horizontalDistance <= GOTO_HORIZONTAL_ARRIVAL_DISTANCE
                 && verticalDifference <= GOTO_VERTICAL_ARRIVAL_DISTANCE) {
@@ -1002,14 +1009,18 @@ public class ActionExecutor {
             state.setLastGotoResult(new GotoResult(target, "success", ""));
             state.clearActiveGoto();
             activeGoto = null;
+            activeGotoRoute = List.of();
+            activeGotoRouteIndex = 0;
             return;
         }
 
-        rotateToward(player, new Vec3d(target.x(), target.y(), target.z()));
+        BlockPos waypoint = currentGotoWaypoint(player);
+        Vec3d waypointCenter = waypointCenter(waypoint);
+        rotateToward(player, waypointCenter);
         tickFollowJumpCooldown();
         clearDirectionalKeys(client.options);
         client.options.forwardKey.setPressed(true);
-        updateGotoJump(client.options, player, target);
+        updateGotoJump(client.options, player, waypoint);
         updateFollowSprint(client.options, horizontalDistance);
     }
 
@@ -1142,9 +1153,22 @@ public class ActionExecutor {
     private void startGoto(MinecraftClient client, ActionRequest request) {
         GotoTarget target = request.gotoTarget();
 
-        if (client == null || client.player == null || client.options == null || target == null) {
+        if (client == null || client.player == null || client.world == null || client.options == null || target == null) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
             state.setLastGotoResult(new GotoResult(target, "failed", "movement_unavailable"));
+            state.clearActiveGoto();
+            state.queueChatMessage("goto failed");
+            return;
+        }
+
+        cancelActiveGoto("goto_cancelled");
+        BlockPos start = client.player.getBlockPos();
+        BlockPos targetPosition = BlockPos.ofFloored(target.x(), target.y(), target.z());
+        PathPlanResult plan = pathPlanner.plan(client.world, start, targetPosition);
+
+        if (!plan.found()) {
+            request.setStatus(ActionRequest.ActionStatus.FAILED);
+            state.setLastGotoResult(new GotoResult(target, "failed", plan.reason()));
             state.clearActiveGoto();
             state.queueChatMessage("goto failed");
             return;
@@ -1154,7 +1178,6 @@ public class ActionExecutor {
         timedMovementTicksRemaining = 0;
         activeApproach = null;
         activeFollow = null;
-        cancelActiveGoto("goto_cancelled");
         followJumpCooldownTicks = 0;
 
         double horizontalDistance = horizontalDistance(client.player, target);
@@ -1173,8 +1196,10 @@ public class ActionExecutor {
         clearDirectionalKeys(client.options);
         client.options.jumpKey.setPressed(false);
         state.setFollowJump(false);
-        rotateToward(client.player, new Vec3d(target.x(), target.y(), target.z()));
-        state.setActiveGoto(target, horizontalDistance);
+        activeGotoRoute = plan.path();
+        activeGotoRouteIndex = activeGotoRoute.size() > 1 ? 1 : 0;
+        rotateToward(client.player, waypointCenter(activeGotoRoute.get(activeGotoRouteIndex)));
+        state.setActiveGoto(target, horizontalDistance, activeGotoRouteIndex, activeGotoRoute.size());
         activeGoto = request;
         state.queueChatMessage("going to " + target.formatForChat());
     }
@@ -1190,6 +1215,8 @@ public class ActionExecutor {
         state.setLastGotoResult(new GotoResult(target, "failed", reason));
         state.clearActiveGoto();
         activeGoto = null;
+        activeGotoRoute = List.of();
+        activeGotoRouteIndex = 0;
     }
 
     private void cancelActiveGoto(String reason) {
@@ -1201,6 +1228,8 @@ public class ActionExecutor {
         activeGoto.setStatus(ActionRequest.ActionStatus.FAILED);
         state.setLastGotoResult(new GotoResult(activeGoto.gotoTarget(), "failed", reason));
         activeGoto = null;
+        activeGotoRoute = List.of();
+        activeGotoRouteIndex = 0;
         state.clearActiveGoto();
     }
 
@@ -1303,15 +1332,28 @@ public class ActionExecutor {
         state.setFollowJump(false);
     }
 
-    private void updateGotoJump(GameOptions options, ClientPlayerEntity player, GotoTarget target) {
+    private BlockPos currentGotoWaypoint(ClientPlayerEntity player) {
+        while (activeGotoRouteIndex < activeGotoRoute.size() - 1
+                && horizontalDistance(player, activeGotoRoute.get(activeGotoRouteIndex)) <= GOTO_WAYPOINT_DISTANCE) {
+            activeGotoRouteIndex++;
+        }
+
+        return activeGotoRoute.get(activeGotoRouteIndex);
+    }
+
+    private Vec3d waypointCenter(BlockPos waypoint) {
+        return new Vec3d(waypoint.getX() + 0.5, waypoint.getY(), waypoint.getZ() + 0.5);
+    }
+
+    private void updateGotoJump(GameOptions options, ClientPlayerEntity player, BlockPos waypoint) {
         if (!canFollowJump(player)) {
             options.jumpKey.setPressed(false);
             state.setFollowJump(false);
             return;
         }
 
-        boolean targetAbove = target.y() - player.getY() >= GOTO_JUMP_TARGET_Y_DELTA
-                && horizontalDistance(player, target) <= FOLLOW_DISTANCE + 2.0;
+        boolean targetAbove = waypoint.getY() - player.getY() >= GOTO_JUMP_TARGET_Y_DELTA
+                && horizontalDistance(player, waypoint) <= FOLLOW_DISTANCE + 2.0;
         boolean blocked = player.horizontalCollision;
 
         if ((targetAbove || blocked) && followJumpCooldownTicks <= 0) {
@@ -1328,6 +1370,12 @@ public class ActionExecutor {
     private double horizontalDistance(ClientPlayerEntity player, GotoTarget target) {
         double deltaX = target.x() - player.getX();
         double deltaZ = target.z() - player.getZ();
+        return Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
+    }
+
+    private double horizontalDistance(ClientPlayerEntity player, BlockPos target) {
+        double deltaX = target.getX() + 0.5 - player.getX();
+        double deltaZ = target.getZ() + 0.5 - player.getZ();
         return Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
     }
 
