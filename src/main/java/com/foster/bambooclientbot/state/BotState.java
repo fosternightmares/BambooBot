@@ -12,6 +12,7 @@ public class BotState {
     private LookedAtBlock lookedAtBlock;
     private ContainerState containerState = ContainerState.closed();
     private ContainerSnapshot containerSnapshot;
+    private InventorySnapshot inventorySnapshot;
     private String activeAction = "none";
     private String lastAction = "none";
     private String lastActionResult = "none";
@@ -65,6 +66,14 @@ public class BotState {
 
     public ContainerSnapshot containerSnapshot() {
         return containerSnapshot;
+    }
+
+    public void setInventorySnapshot(InventorySnapshot inventorySnapshot) {
+        this.inventorySnapshot = inventorySnapshot;
+    }
+
+    public InventorySnapshot inventorySnapshot() {
+        return inventorySnapshot;
     }
 
     public void setActiveAction(String activeAction) {

@@ -2,6 +2,7 @@ package com.foster.bambooclientbot.sensors;
 
 import com.foster.bambooclientbot.state.BotState;
 import com.foster.bambooclientbot.state.ContainerSnapshot;
+import com.foster.bambooclientbot.state.InventorySnapshot;
 import com.foster.bambooclientbot.state.LookedAtBlock;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
@@ -30,6 +31,7 @@ public class PlayerSensors {
                 + " " + lookingAtBlockStatus(state)
                 + " " + state.containerState().format()
                 + " " + containerSnapshotStatus(state)
+                + " " + inventorySnapshotStatus(state)
                 + " activeAction=" + state.activeAction()
                 + " " + state.lastActionStatus()
                 + " " + state.lastTransferStatus();
@@ -44,6 +46,17 @@ public class PlayerSensors {
 
         return "containerSnapshotSlots=" + snapshot.slotCount()
                 + " containerSnapshotOccupied=" + snapshot.occupiedSlots();
+    }
+
+    private String inventorySnapshotStatus(BotState state) {
+        InventorySnapshot snapshot = state.inventorySnapshot();
+
+        if (snapshot == null) {
+            return "inventorySlots=0 inventoryOccupied=0";
+        }
+
+        return "inventorySlots=" + snapshot.slotCount()
+                + " inventoryOccupied=" + snapshot.occupiedSlots();
     }
 
     private String lookingAtBlockStatus(BotState state) {

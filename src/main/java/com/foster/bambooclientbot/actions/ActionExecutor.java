@@ -3,6 +3,7 @@ package com.foster.bambooclientbot.actions;
 import com.foster.bambooclientbot.commands.ItemResolver;
 import com.foster.bambooclientbot.state.BotState;
 import com.foster.bambooclientbot.state.ContainerSnapshot;
+import com.foster.bambooclientbot.state.InventorySnapshot;
 import com.foster.bambooclientbot.state.LookedAtBlock;
 import com.foster.bambooclientbot.state.TransferResult;
 import net.minecraft.client.MinecraftClient;
@@ -33,6 +34,8 @@ public class ActionExecutor {
     private static final double FOLLOW_DISTANCE = 3.0;
     private static final double FOLLOW_SPRINT_ENABLE_DISTANCE = 6.0;
     private static final double FOLLOW_SPRINT_DISABLE_DISTANCE = 4.0;
+    private static final int MAIN_INVENTORY_SLOT_COUNT = 36;
+    private static final int INVENTORY_DETAILS_MAX_LENGTH = 240;
 
     private final BotState state;
     private ActionRequest timedMovement;
@@ -100,6 +103,10 @@ public class ActionExecutor {
                 transferItems(client, request, "deposit", true);
             } else if (request.actionType() == ActionRequest.ActionType.WITHDRAW_ITEM) {
                 transferItems(client, request, "withdraw", false);
+            } else if (request.actionType() == ActionRequest.ActionType.CAPTURE_INVENTORY_SNAPSHOT) {
+                captureInventorySnapshot(client, request, false);
+            } else if (request.actionType() == ActionRequest.ActionType.CAPTURE_INVENTORY_DETAILS) {
+                captureInventorySnapshot(client, request, true);
             }
         } catch (Exception exception) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
@@ -139,6 +146,84 @@ public class ActionExecutor {
         request.setStatus(ActionRequest.ActionStatus.COMPLETE);
         state.setLastActionResult(request.actionType().name(), "success", "");
         state.queueChatMessage("snapshot captured");
+    }
+
+    private void captureInventorySnapshot(MinecraftClient client, ActionRequest request, boolean includeDetails) {
+        if (client == null || client.player == null) {
+            request.setStatus(ActionRequest.ActionStatus.FAILED);
+            state.setLastActionResult(request.actionType().name(), "failed", "inventory_unavailable");
+            state.queueChatMessage("inventory_unavailable");
+            return;
+        }
+
+        PlayerInventory inventory = client.player.getInventory();
+        List<InventorySnapshot.Entry> entries = new ArrayList<>();
+        int slotCount = Math.min(MAIN_INVENTORY_SLOT_COUNT, inventory.size());
+
+        for (int slot = 0; slot < slotCount; slot++) {
+            ItemStack stack = inventory.getStack(slot);
+
+            if (stack.isEmpty()) {
+                continue;
+            }
+
+            entries.add(new InventorySnapshot.Entry(
+                    slot,
+                    Registries.ITEM.getId(stack.getItem()).toString(),
+                    stack.getCount()
+            ));
+        }
+
+        InventorySnapshot snapshot = new InventorySnapshot(System.currentTimeMillis(), slotCount, List.copyOf(entries));
+        state.setInventorySnapshot(snapshot);
+        request.setStatus(ActionRequest.ActionStatus.COMPLETE);
+        state.setLastActionResult(request.actionType().name(), "success", "");
+
+        if (includeDetails) {
+            state.queueChatMessage(formatInventoryDetails(snapshot));
+        } else {
+            state.queueChatMessage("inventory snapshot captured");
+        }
+    }
+
+    private String formatInventoryDetails(InventorySnapshot snapshot) {
+        String prefix = "inventory slots=" + snapshot.slotCount() + " occupied=" + snapshot.occupiedSlots() + " [";
+        StringBuilder message = new StringBuilder(prefix);
+        int includedEntries = 0;
+
+        for (InventorySnapshot.Entry entry : snapshot.entries()) {
+            String formattedEntry = formatInventoryEntry(entry);
+            int separatorLength = includedEntries == 0 ? 0 : 1;
+            int remainingAfterEntry = snapshot.occupiedSlots() - includedEntries - 1;
+            String truncationSuffix = remainingAfterEntry > 0 ? ",...+" + remainingAfterEntry : "";
+            int suffixLength = truncationSuffix.length() + 1;
+
+            if (message.length() + separatorLength + formattedEntry.length() + suffixLength > INVENTORY_DETAILS_MAX_LENGTH) {
+                break;
+            }
+
+            if (includedEntries > 0) {
+                message.append(',');
+            }
+
+            message.append(formattedEntry);
+            includedEntries++;
+        }
+
+        if (includedEntries < snapshot.occupiedSlots()) {
+            if (includedEntries > 0) {
+                message.append(',');
+            }
+
+            message.append("...+").append(snapshot.occupiedSlots() - includedEntries);
+        }
+
+        message.append(']');
+        return message.toString();
+    }
+
+    private String formatInventoryEntry(InventorySnapshot.Entry entry) {
+        return entry.slot() + ":" + compactItemId(entry.itemId()) + "x" + entry.count();
     }
 
     private void transferItems(MinecraftClient client, ActionRequest request, String operation, boolean deposit) {

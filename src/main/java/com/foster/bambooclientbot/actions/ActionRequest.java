@@ -16,7 +16,9 @@ public class ActionRequest {
         CLOSE_CURRENT_SCREEN,
         CAPTURE_CONTAINER_SNAPSHOT,
         DEPOSIT_ITEM,
-        WITHDRAW_ITEM
+        WITHDRAW_ITEM,
+        CAPTURE_INVENTORY_SNAPSHOT,
+        CAPTURE_INVENTORY_DETAILS
     }
 
     public enum ActionStatus {

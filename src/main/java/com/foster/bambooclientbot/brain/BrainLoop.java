@@ -71,6 +71,10 @@ public class BrainLoop {
                 queueContainerSnapshotDetails();
             } else if ("inspect container".equals(request.command()) || "container".equals(request.command()) || "snapshot".equals(request.command())) {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.CAPTURE_CONTAINER_SNAPSHOT, ""));
+            } else if ("inventory details".equals(request.command())) {
+                state.queueAction(new ActionRequest(ActionRequest.ActionType.CAPTURE_INVENTORY_DETAILS, ""));
+            } else if ("inventory".equals(request.command()) || "inventory snapshot".equals(request.command())) {
+                state.queueAction(new ActionRequest(ActionRequest.ActionType.CAPTURE_INVENTORY_SNAPSHOT, ""));
             }
         }
     }
