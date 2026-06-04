@@ -113,6 +113,14 @@ public final class ChatHandler {
             return new CommandRequest("invalid_count");
         }
 
+        if (command.startsWith("count ")) {
+            return parseItemCount(command.substring("count ".length()));
+        }
+
+        if ("count".equals(command)) {
+            return new CommandRequest("invalid_count_item");
+        }
+
         String[] parts = command.split("\\s+");
 
         if (parts.length > 1 && isMovementCommand(parts[0])) {
@@ -182,5 +190,15 @@ public final class ChatHandler {
         } catch (NumberFormatException exception) {
             return new CommandRequest("invalid_count");
         }
+    }
+
+    private static CommandRequest parseItemCount(String itemText) {
+        String itemId = ItemResolver.resolveItemArg(itemText);
+
+        if (itemId.isBlank()) {
+            return new CommandRequest("invalid_count_item");
+        }
+
+        return CommandRequest.itemQuery("count", itemId, ItemResolver.displayItemArg(itemText));
     }
 }

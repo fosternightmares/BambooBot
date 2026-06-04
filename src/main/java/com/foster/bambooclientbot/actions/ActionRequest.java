@@ -18,7 +18,8 @@ public class ActionRequest {
         DEPOSIT_ITEM,
         WITHDRAW_ITEM,
         CAPTURE_INVENTORY_SNAPSHOT,
-        CAPTURE_INVENTORY_DETAILS
+        CAPTURE_INVENTORY_DETAILS,
+        COUNT_ITEM
     }
 
     public enum ActionStatus {
@@ -36,26 +37,27 @@ public class ActionRequest {
     private final int durationSeconds;
     private final LookedAtBlock targetedBlock;
     private final String itemId;
+    private final String itemLabel;
     private final int requestedCount;
 
     public ActionRequest(ActionType actionType, String actionData) {
-        this(actionType, actionData, 0, 0, null, "", 0);
+        this(actionType, actionData, 0, 0, null, "", "", 0);
     }
 
     public ActionRequest(ActionType actionType, String actionData, int durationTicks, int durationSeconds) {
-        this(actionType, actionData, durationTicks, durationSeconds, null, "", 0);
+        this(actionType, actionData, durationTicks, durationSeconds, null, "", "", 0);
     }
 
     public ActionRequest(ActionType actionType, LookedAtBlock targetedBlock) {
-        this(actionType, "", 0, 0, targetedBlock, "", 0);
+        this(actionType, "", 0, 0, targetedBlock, "", "", 0);
     }
 
     public ActionRequest(ActionType actionType, String actionData, int durationTicks, int durationSeconds, LookedAtBlock targetedBlock) {
-        this(actionType, actionData, durationTicks, durationSeconds, targetedBlock, "", 0);
+        this(actionType, actionData, durationTicks, durationSeconds, targetedBlock, "", "", 0);
     }
 
     private ActionRequest(ActionType actionType, String actionData, int durationTicks, int durationSeconds,
-                          LookedAtBlock targetedBlock, String itemId, int requestedCount) {
+                          LookedAtBlock targetedBlock, String itemId, String itemLabel, int requestedCount) {
         this.actionType = actionType;
         this.actionStatus = ActionStatus.IDLE;
         this.actionData = actionData;
@@ -63,11 +65,16 @@ public class ActionRequest {
         this.durationSeconds = durationSeconds;
         this.targetedBlock = targetedBlock;
         this.itemId = itemId;
+        this.itemLabel = itemLabel;
         this.requestedCount = requestedCount;
     }
 
     public static ActionRequest itemTransfer(ActionType actionType, String itemId, int requestedCount) {
-        return new ActionRequest(actionType, "", 0, 0, null, itemId, requestedCount);
+        return new ActionRequest(actionType, "", 0, 0, null, itemId, "", requestedCount);
+    }
+
+    public static ActionRequest itemQuery(ActionType actionType, String itemId, String itemLabel) {
+        return new ActionRequest(actionType, "", 0, 0, null, itemId, itemLabel, 0);
     }
 
     public ActionType actionType() {
@@ -100,6 +107,10 @@ public class ActionRequest {
 
     public String itemId() {
         return itemId;
+    }
+
+    public String itemLabel() {
+        return itemLabel;
     }
 
     public int requestedCount() {

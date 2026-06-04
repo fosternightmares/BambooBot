@@ -38,6 +38,8 @@ public class BrainLoop {
                     || "invalid_item".equals(request.command())
                     || "invalid_count".equals(request.command())) {
                 state.queueChatMessage("transfer failed");
+            } else if ("invalid_count_item".equals(request.command())) {
+                state.queueChatMessage("count failed");
             } else if ("stop".equals(request.command())) {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.STOP, ""));
             } else if ("deposit".equals(request.command())) {
@@ -51,6 +53,12 @@ public class BrainLoop {
                         ActionRequest.ActionType.WITHDRAW_ITEM,
                         request.itemId(),
                         request.requestedCount()
+                ));
+            } else if ("count".equals(request.command())) {
+                state.queueAction(ActionRequest.itemQuery(
+                        ActionRequest.ActionType.COUNT_ITEM,
+                        request.itemId(),
+                        request.itemLabel()
                 ));
             } else if ("forward".equals(request.command())) {
                 queueMovement(ActionRequest.ActionType.FORWARD, request);

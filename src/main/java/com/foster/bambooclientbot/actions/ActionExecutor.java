@@ -108,6 +108,8 @@ public class ActionExecutor {
                 captureInventorySnapshot(client, request, false);
             } else if (request.actionType() == ActionRequest.ActionType.CAPTURE_INVENTORY_DETAILS) {
                 captureInventorySnapshot(client, request, true);
+            } else if (request.actionType() == ActionRequest.ActionType.COUNT_ITEM) {
+                countItem(client, request);
             }
         } catch (Exception exception) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
@@ -151,11 +153,29 @@ public class ActionExecutor {
     }
 
     private void captureInventorySnapshot(MinecraftClient client, ActionRequest request, boolean includeDetails) {
-        if (client == null || client.player == null) {
+        InventorySnapshot snapshot = readInventorySnapshot(client);
+
+        if (snapshot == null) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
             state.setLastActionResult(request.actionType().name(), "failed", "inventory_unavailable");
             state.queueChatMessage("inventory_unavailable");
             return;
+        }
+
+        state.setInventorySnapshot(snapshot);
+        request.setStatus(ActionRequest.ActionStatus.COMPLETE);
+        state.setLastActionResult(request.actionType().name(), "success", "");
+
+        if (includeDetails) {
+            state.queueChatMessage(formatInventoryDetails(snapshot));
+        } else {
+            state.queueChatMessage("inventory snapshot captured");
+        }
+    }
+
+    private InventorySnapshot readInventorySnapshot(MinecraftClient client) {
+        if (client == null || client.player == null) {
+            return null;
         }
 
         PlayerInventory inventory = client.player.getInventory();
@@ -176,16 +196,58 @@ public class ActionExecutor {
             ));
         }
 
-        InventorySnapshot snapshot = new InventorySnapshot(System.currentTimeMillis(), slotCount, List.copyOf(entries));
-        state.setInventorySnapshot(snapshot);
+        return new InventorySnapshot(System.currentTimeMillis(), slotCount, List.copyOf(entries));
+    }
+
+    private void countItem(MinecraftClient client, ActionRequest request) {
+        String itemId = normalizeItemId(request.itemId());
+
+        if (itemId.isBlank()) {
+            request.setStatus(ActionRequest.ActionStatus.FAILED);
+            state.setLastActionResult(request.actionType().name(), "failed", "invalid_item");
+            state.queueChatMessage("count failed");
+            return;
+        }
+
+        InventorySnapshot snapshot = state.inventorySnapshot();
+
+        if (snapshot == null) {
+            snapshot = readInventorySnapshot(client);
+
+            if (snapshot == null) {
+                request.setStatus(ActionRequest.ActionStatus.FAILED);
+                state.setLastActionResult(request.actionType().name(), "failed", "inventory_unavailable");
+                state.queueChatMessage("count failed");
+                return;
+            }
+
+            state.setInventorySnapshot(snapshot);
+        }
+
+        int count = countSnapshotItem(snapshot, itemId);
         request.setStatus(ActionRequest.ActionStatus.COMPLETE);
         state.setLastActionResult(request.actionType().name(), "success", "");
+        state.queueChatMessage(countItemLabel(request, itemId) + " x" + count);
+    }
 
-        if (includeDetails) {
-            state.queueChatMessage(formatInventoryDetails(snapshot));
-        } else {
-            state.queueChatMessage("inventory snapshot captured");
+    private int countSnapshotItem(InventorySnapshot snapshot, String itemId) {
+        int count = 0;
+
+        for (InventorySnapshot.Entry entry : snapshot.entries()) {
+            if (entry.itemId().equals(itemId)) {
+                count += entry.count();
+            }
         }
+
+        return count;
+    }
+
+    private String countItemLabel(ActionRequest request, String itemId) {
+        if (request.itemLabel() != null && !request.itemLabel().isBlank()) {
+            return request.itemLabel();
+        }
+
+        return compactItemId(itemId);
     }
 
     private String formatInventoryDetails(InventorySnapshot snapshot) {
