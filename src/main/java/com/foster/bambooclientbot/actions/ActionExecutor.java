@@ -1027,7 +1027,6 @@ public class ActionExecutor {
             client.options.jumpKey.setPressed(false);
             client.options.sprintKey.setPressed(false);
             state.setFollowJump(false);
-            state.clearMovementDiagnostics();
             return;
         }
 
@@ -1048,8 +1047,6 @@ public class ActionExecutor {
         client.options.forwardKey.setPressed(true);
         updateFollowRouteJump(client.options, player, waypoint);
         updateFollowSprint(client.options, player.distanceTo(target));
-        recordMovementDiagnostics("follow_route", client.options, player, waypoint, activeFollowRouteIndex,
-                activeFollowRoute.size());
         state.setActiveFollowRoute(
                 activeFollow.actionData(),
                 activeFollowRouteIndex,
@@ -1106,7 +1103,6 @@ public class ActionExecutor {
         client.options.forwardKey.setPressed(true);
         updateGotoJump(client.options, player, waypoint);
         updateFollowSprint(client.options, horizontalDistance);
-        recordMovementDiagnostics("goto", client.options, player, waypoint, activeGotoRouteIndex, activeGotoRoute.size());
     }
 
     private void tickTimedMovement(MinecraftClient client) {
@@ -1307,7 +1303,6 @@ public class ActionExecutor {
 
     private void chaseFollowTarget(GameOptions options, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
         Vec3d predicted = new Vec3d(target.getX(), target.getY(), target.getZ()).add(target.getVelocity().multiply(FOLLOW_PREDICTION_TICKS));
-        BlockPos waypoint = BlockPos.ofFloored(predicted.x, predicted.y, predicted.z);
         Vec3d lookTarget = new Vec3d(predicted.x, Math.max(player.getEyeY() - 0.2, target.getY() + ROUTE_LOOK_HEIGHT), predicted.z);
 
         rotateToward(player, lookTarget);
@@ -1315,7 +1310,6 @@ public class ActionExecutor {
         options.forwardKey.setPressed(true);
         updateFollowSprint(options, player.distanceTo(target));
         updateFollowDirectJump(options, player, target);
-        recordMovementDiagnostics("follow_direct", options, player, waypoint, 0, 0);
     }
 
     private void updateFollowDirectJump(GameOptions options, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
@@ -1531,7 +1525,6 @@ public class ActionExecutor {
         options.sprintKey.setPressed(false);
         options.attackKey.setPressed(false);
         options.useKey.setPressed(false);
-        state.clearMovementDiagnostics();
     }
 
     private void tickAutoUse(MinecraftClient client) {
@@ -1715,25 +1708,6 @@ public class ActionExecutor {
 
         options.jumpKey.setPressed(false);
         state.setFollowJump(false);
-    }
-
-    private void recordMovementDiagnostics(String mode, GameOptions options, ClientPlayerEntity player, BlockPos waypoint,
-                                           int routeIndex, int routeLength) {
-        state.setMovementDiagnostics(
-                mode,
-                waypointLabel(waypoint),
-                waypoint.getY() - player.getY(),
-                player.horizontalCollision,
-                player.isOnGround(),
-                options.jumpKey.isPressed(),
-                options.sprintKey.isPressed(),
-                routeIndex,
-                routeLength
-        );
-    }
-
-    private String waypointLabel(BlockPos waypoint) {
-        return waypoint.getX() + " " + waypoint.getY() + " " + waypoint.getZ();
     }
 
     private double horizontalDistance(ClientPlayerEntity player, GotoTarget target) {
