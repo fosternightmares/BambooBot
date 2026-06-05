@@ -173,19 +173,12 @@ public class BotState {
     }
 
     public String gotoStatus() {
-        String lastGoto = lastGotoResult == null ? "lastGoto=none" : lastGotoResult.format();
-
         if (activeGotoTarget == null) {
-            return "activeGoto=none " + lastGoto;
+            return "gotoTarget=none";
         }
 
-        return "activeGoto=true target=" + activeGotoTarget.format()
-                + " routeIndex=" + activeGotoRouteIndex
-                + " routeLength=" + activeGotoRouteLength
-                + " distance=" + String.format(java.util.Locale.ROOT, "%.1f", activeGotoDistance)
-                + " replans=" + activeGotoReplans
-                + " stuckTicks=" + activeGotoStuckTicks
-                + " " + lastGoto;
+        return "gotoTarget=" + activeGotoTarget.format()
+                + " gotoDistance=" + String.format(java.util.Locale.ROOT, "%.1f", activeGotoDistance);
     }
 
     public void setActiveFollowRoute(String targetPlayer, int routeIndex, int routeLength, String result,
@@ -209,15 +202,52 @@ public class BotState {
 
     public String followRouteStatus() {
         if (activeFollowTarget == null || activeFollowTarget.isBlank()) {
-            return "followRoute=none";
+            return "followTarget=none";
         }
 
-        return "followRoute=true target=" + activeFollowTarget
-                + " routeIndex=" + activeFollowRouteIndex
-                + " routeLength=" + activeFollowRouteLength
-                + " result=" + activeFollowRouteResult
-                + " replans=" + activeFollowRouteReplans
-                + " stuckTicks=" + activeFollowRouteStuckTicks;
+        return "followTarget=" + activeFollowTarget;
+    }
+
+    public String routeStatus() {
+        if (activeGotoTarget != null) {
+            return "routeActive=true"
+                    + " routeIndex=" + activeGotoRouteIndex
+                    + " routeLength=" + activeGotoRouteLength
+                    + " routeResult=success"
+                    + " stuckTicks=" + activeGotoStuckTicks
+                    + " replans=" + activeGotoReplans;
+        }
+
+        if (activeFollowTarget != null && !activeFollowTarget.isBlank()) {
+            return "routeActive=true"
+                    + " routeIndex=" + activeFollowRouteIndex
+                    + " routeLength=" + activeFollowRouteLength
+                    + " routeResult=" + normalizeRouteResult(activeFollowRouteResult)
+                    + " stuckTicks=" + activeFollowRouteStuckTicks
+                    + " replans=" + activeFollowRouteReplans;
+        }
+
+        return "routeActive=false routeIndex=0 routeLength=0 routeResult=none stuckTicks=0 replans=0";
+    }
+
+    public String recentRouteStatus() {
+        if (lastGotoResult == null) {
+            return "lastGoto=none lastGotoResult=none";
+        }
+
+        return "lastGoto=" + lastGotoResult.targetLabel()
+                + " lastGotoResult=" + normalizeRouteResult(lastGotoResult.result());
+    }
+
+    private String normalizeRouteResult(String result) {
+        if (result == null || result.isBlank()) {
+            return "none";
+        }
+
+        return switch (result) {
+            case "success", "stuck", "timeout", "none" -> result;
+            default -> "failed";
+        };
     }
 
     public void setFollowJump(boolean followJump) {

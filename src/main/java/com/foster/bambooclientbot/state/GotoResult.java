@@ -12,4 +12,12 @@ public record GotoResult(GotoTarget target, String result, String reason) {
 
         return "lastGoto=" + target.format() + " result=" + result + " reason=" + reason;
     }
+
+    public String targetLabel() {
+        if (target == null) {
+            return "none";
+        }
+
+        return target.format();
+    }
 }
