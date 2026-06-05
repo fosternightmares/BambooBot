@@ -46,6 +46,7 @@ public class ActionExecutor {
     private static final double GOTO_VERTICAL_ARRIVAL_DISTANCE = 2.0;
     private static final double GOTO_WAYPOINT_DISTANCE = 0.8;
     private static final double GOTO_JUMP_TARGET_Y_DELTA = 0.5;
+    private static final double ROUTE_LOOK_HEIGHT = 1.5;
     private static final int FOLLOW_JUMP_COOLDOWN_TICKS = 8;
     private static final long AUTOSWING_INTERVAL_MILLIS = 1_000L;
     private static final int MAIN_INVENTORY_SLOT_COUNT = 36;
@@ -999,7 +1000,7 @@ public class ActionExecutor {
 
         activeFollowRouteIndex = routeIndexFor(player, activeFollowRoute, activeFollowRouteIndex);
         BlockPos waypoint = activeFollowRoute.get(activeFollowRouteIndex);
-        rotateToward(player, waypointCenter(waypoint));
+        rotateToward(player, routeLookTarget(player, activeFollowRoute, activeFollowRouteIndex));
         clearDirectionalKeys(client.options);
         client.options.forwardKey.setPressed(true);
         updateFollowRouteJump(client.options, player, waypoint);
@@ -1037,8 +1038,7 @@ public class ActionExecutor {
         }
 
         BlockPos waypoint = currentGotoWaypoint(player);
-        Vec3d waypointCenter = waypointCenter(waypoint);
-        rotateToward(player, waypointCenter);
+        rotateToward(player, routeLookTarget(player, activeGotoRoute, activeGotoRouteIndex));
         tickFollowJumpCooldown();
         clearDirectionalKeys(client.options);
         client.options.forwardKey.setPressed(true);
@@ -1270,7 +1270,7 @@ public class ActionExecutor {
         state.setFollowJump(false);
         activeGotoRoute = plan.path();
         activeGotoRouteIndex = activeGotoRoute.size() > 1 ? 1 : 0;
-        rotateToward(client.player, waypointCenter(activeGotoRoute.get(activeGotoRouteIndex)));
+        rotateToward(client.player, routeLookTarget(client.player, activeGotoRoute, activeGotoRouteIndex));
         state.setActiveGoto(target, horizontalDistance, activeGotoRouteIndex, activeGotoRoute.size());
         activeGoto = request;
         state.queueChatMessage("going to " + target.formatForChat());
@@ -1400,6 +1400,20 @@ public class ActionExecutor {
 
     private Vec3d waypointCenter(BlockPos waypoint) {
         return new Vec3d(waypoint.getX() + 0.5, waypoint.getY(), waypoint.getZ() + 0.5);
+    }
+
+    private Vec3d routeLookTarget(ClientPlayerEntity player, List<BlockPos> route, int routeIndex) {
+        BlockPos waypoint = route.get(routeIndex);
+        Vec3d current = waypointCenter(waypoint);
+        Vec3d lookPoint = current;
+
+        if (routeIndex + 1 < route.size()) {
+            Vec3d next = waypointCenter(route.get(routeIndex + 1));
+            lookPoint = current.add(next).multiply(0.5);
+        }
+
+        double lookY = Math.max(player.getEyeY() - 0.2, waypoint.getY() + ROUTE_LOOK_HEIGHT);
+        return new Vec3d(lookPoint.x, lookY, lookPoint.z);
     }
 
     private void updateGotoJump(GameOptions options, ClientPlayerEntity player, BlockPos waypoint) {
