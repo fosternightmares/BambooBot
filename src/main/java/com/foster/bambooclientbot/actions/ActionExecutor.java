@@ -41,7 +41,11 @@ public class ActionExecutor {
     private static final double FOLLOW_SPRINT_ENABLE_DISTANCE = 6.0;
     private static final double FOLLOW_SPRINT_DISABLE_DISTANCE = 4.0;
     private static final double FOLLOW_REPLAN_DISTANCE = 2.5;
-    private static final int FOLLOW_REPLAN_TICKS = 40;
+    private static final double FOLLOW_DIRECT_CHASE_DISTANCE = 12.0;
+    private static final double FOLLOW_WAYPOINT_DISTANCE = 1.0;
+    private static final int FOLLOW_REPLAN_TICKS = 10;
+    private static final int FOLLOW_PREDICTION_TICKS = 10;
+    private static final int FOLLOW_ROUTE_LOOKAHEAD_STEPS = 2;
     private static final double GOTO_HORIZONTAL_ARRIVAL_DISTANCE = 1.5;
     private static final double GOTO_VERTICAL_ARRIVAL_DISTANCE = 2.0;
     private static final double GOTO_WAYPOINT_DISTANCE = 0.8;
@@ -1001,6 +1005,21 @@ public class ActionExecutor {
         }
 
         tickFollowJumpCooldown();
+
+        if (canDirectChase(player, target)) {
+            clearActiveFollowRouteLocal();
+            chaseFollowTarget(client.options, player, target);
+            state.setActiveFollowRoute(
+                    activeFollow.actionData(),
+                    0,
+                    0,
+                    "success",
+                    followStuckReplans,
+                    followStuckTicks
+            );
+            return;
+        }
+
         tickFollowReplan(client, player, target);
 
         if (activeFollowRoute.isEmpty()) {
@@ -1012,7 +1031,7 @@ public class ActionExecutor {
         }
 
         int previousRouteIndex = activeFollowRouteIndex;
-        activeFollowRouteIndex = routeIndexFor(player, activeFollowRoute, activeFollowRouteIndex);
+        activeFollowRouteIndex = routeIndexFor(player, activeFollowRoute, activeFollowRouteIndex, FOLLOW_WAYPOINT_DISTANCE);
         if (activeFollowRouteIndex != previousRouteIndex) {
             resetFollowStuckTracking();
         }
@@ -1023,7 +1042,7 @@ public class ActionExecutor {
             return;
         }
 
-        rotateToward(player, routeLookTarget(player, activeFollowRoute, activeFollowRouteIndex));
+        rotateToward(player, followRouteLookTarget(player, activeFollowRoute, activeFollowRouteIndex));
         clearDirectionalKeys(client.options);
         client.options.forwardKey.setPressed(true);
         updateFollowRouteJump(client.options, player, waypoint);
@@ -1216,7 +1235,7 @@ public class ActionExecutor {
             followReplanTicks--;
         }
 
-        BlockPos targetPosition = target.getBlockPos();
+        BlockPos targetPosition = predictedFollowTarget(target);
         boolean targetMoved = activeFollowRouteTarget == null
                 || activeFollowRouteTarget.getSquaredDistance(targetPosition) > FOLLOW_REPLAN_DISTANCE * FOLLOW_REPLAN_DISTANCE;
 
@@ -1231,7 +1250,7 @@ public class ActionExecutor {
             return;
         }
 
-        BlockPos targetPosition = target.getBlockPos();
+        BlockPos targetPosition = predictedFollowTarget(target);
         PathPlanResult plan = pathPlanner.plan(client.world, player.getBlockPos(), targetPosition);
         followReplanTicks = FOLLOW_REPLAN_TICKS;
 
@@ -1270,6 +1289,47 @@ public class ActionExecutor {
         bestFollowWaypointDistance = Double.POSITIVE_INFINITY;
         followStuckTicks = 0;
         followStuckReplans = 0;
+    }
+
+    private BlockPos predictedFollowTarget(AbstractClientPlayerEntity target) {
+        Vec3d velocity = target.getVelocity();
+        Vec3d predicted = new Vec3d(target.getX(), target.getY(), target.getZ()).add(velocity.multiply(FOLLOW_PREDICTION_TICKS));
+        return BlockPos.ofFloored(predicted.x, predicted.y, predicted.z);
+    }
+
+    private boolean canDirectChase(ClientPlayerEntity player, AbstractClientPlayerEntity target) {
+        return player.distanceTo(target) <= FOLLOW_DIRECT_CHASE_DISTANCE && player.canSee(target);
+    }
+
+    private void chaseFollowTarget(GameOptions options, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
+        Vec3d predicted = new Vec3d(target.getX(), target.getY(), target.getZ()).add(target.getVelocity().multiply(FOLLOW_PREDICTION_TICKS));
+        Vec3d lookTarget = new Vec3d(predicted.x, Math.max(player.getEyeY() - 0.2, target.getY() + ROUTE_LOOK_HEIGHT), predicted.z);
+
+        rotateToward(player, lookTarget);
+        clearDirectionalKeys(options);
+        options.forwardKey.setPressed(true);
+        updateFollowSprint(options, player.distanceTo(target));
+        updateFollowDirectJump(options, player, target);
+    }
+
+    private void updateFollowDirectJump(GameOptions options, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
+        boolean flatGroundChase = Math.abs(target.getY() - player.getY()) < 0.5;
+
+        if (!canFollowJump(player) || !flatGroundChase || player.distanceTo(target) <= FOLLOW_SPRINT_ENABLE_DISTANCE) {
+            options.jumpKey.setPressed(false);
+            state.setFollowJump(false);
+            return;
+        }
+
+        if (followJumpCooldownTicks <= 0) {
+            options.jumpKey.setPressed(true);
+            state.setFollowJump(true);
+            followJumpCooldownTicks = FOLLOW_JUMP_COOLDOWN_TICKS;
+            return;
+        }
+
+        options.jumpKey.setPressed(false);
+        state.setFollowJump(false);
     }
 
     private boolean isFollowRouteStuck(MinecraftClient client, ClientPlayerEntity player, AbstractClientPlayerEntity target,
@@ -1534,10 +1594,14 @@ public class ActionExecutor {
     }
 
     private int routeIndexFor(ClientPlayerEntity player, List<BlockPos> route, int currentIndex) {
+        return routeIndexFor(player, route, currentIndex, GOTO_WAYPOINT_DISTANCE);
+    }
+
+    private int routeIndexFor(ClientPlayerEntity player, List<BlockPos> route, int currentIndex, double waypointDistance) {
         int routeIndex = currentIndex;
 
         while (routeIndex < route.size() - 1
-                && horizontalDistance(player, route.get(routeIndex)) <= GOTO_WAYPOINT_DISTANCE) {
+                && horizontalDistance(player, route.get(routeIndex)) <= waypointDistance) {
             routeIndex++;
         }
 
@@ -1591,6 +1655,15 @@ public class ActionExecutor {
         }
 
         double lookY = Math.max(player.getEyeY() - 0.2, waypoint.getY() + ROUTE_LOOK_HEIGHT);
+        return new Vec3d(lookPoint.x, lookY, lookPoint.z);
+    }
+
+    private Vec3d followRouteLookTarget(ClientPlayerEntity player, List<BlockPos> route, int routeIndex) {
+        int lookaheadIndex = Math.min(route.size() - 1, routeIndex + FOLLOW_ROUTE_LOOKAHEAD_STEPS);
+        Vec3d current = waypointCenter(route.get(routeIndex));
+        Vec3d lookahead = waypointCenter(route.get(lookaheadIndex));
+        Vec3d lookPoint = current.multiply(0.35).add(lookahead.multiply(0.65));
+        double lookY = Math.max(player.getEyeY() - 0.2, route.get(routeIndex).getY() + ROUTE_LOOK_HEIGHT);
         return new Vec3d(lookPoint.x, lookY, lookPoint.z);
     }
 
