@@ -32,6 +32,15 @@ public class BotState {
     private String activeFollowRouteResult = "none";
     private int activeFollowRouteReplans;
     private int activeFollowRouteStuckTicks;
+    private String movementMode = "none";
+    private String movementWaypoint = "none";
+    private double movementWaypointDeltaY;
+    private boolean movementHorizontalCollision;
+    private boolean movementOnGround;
+    private boolean movementJumpPressed;
+    private boolean movementSprintPressed;
+    private int movementRouteIndex;
+    private int movementRouteLength;
     private boolean followJump;
     private boolean autoSwing;
     private long lastSwingTimeMillis;
@@ -166,6 +175,7 @@ public class BotState {
         activeGotoRouteLength = 0;
         activeGotoReplans = 0;
         activeGotoStuckTicks = 0;
+        clearMovementDiagnostics();
     }
 
     public void setLastGotoResult(GotoResult lastGotoResult) {
@@ -198,6 +208,7 @@ public class BotState {
         activeFollowRouteResult = "none";
         activeFollowRouteReplans = 0;
         activeFollowRouteStuckTicks = 0;
+        clearMovementDiagnostics();
     }
 
     public String followRouteStatus() {
@@ -215,7 +226,8 @@ public class BotState {
                     + " routeLength=" + activeGotoRouteLength
                     + " routeResult=success"
                     + " stuckTicks=" + activeGotoStuckTicks
-                    + " replans=" + activeGotoReplans;
+                    + " replans=" + activeGotoReplans
+                    + " " + movementDiagnosticsStatus();
         }
 
         if (activeFollowTarget != null && !activeFollowTarget.isBlank()) {
@@ -224,10 +236,51 @@ public class BotState {
                     + " routeLength=" + activeFollowRouteLength
                     + " routeResult=" + normalizeRouteResult(activeFollowRouteResult)
                     + " stuckTicks=" + activeFollowRouteStuckTicks
-                    + " replans=" + activeFollowRouteReplans;
+                    + " replans=" + activeFollowRouteReplans
+                    + " " + movementDiagnosticsStatus();
         }
 
-        return "routeActive=false routeIndex=0 routeLength=0 routeResult=none stuckTicks=0 replans=0";
+        return "routeActive=false routeIndex=0 routeLength=0 routeResult=none stuckTicks=0 replans=0 "
+                + movementDiagnosticsStatus();
+    }
+
+    public void setMovementDiagnostics(String mode, String waypoint, double waypointDeltaY,
+                                       boolean horizontalCollision, boolean onGround,
+                                       boolean jumpPressed, boolean sprintPressed,
+                                       int routeIndex, int routeLength) {
+        movementMode = mode == null || mode.isBlank() ? "none" : mode;
+        movementWaypoint = waypoint == null || waypoint.isBlank() ? "none" : waypoint;
+        movementWaypointDeltaY = waypointDeltaY;
+        movementHorizontalCollision = horizontalCollision;
+        movementOnGround = onGround;
+        movementJumpPressed = jumpPressed;
+        movementSprintPressed = sprintPressed;
+        movementRouteIndex = routeIndex;
+        movementRouteLength = routeLength;
+    }
+
+    public void clearMovementDiagnostics() {
+        movementMode = "none";
+        movementWaypoint = "none";
+        movementWaypointDeltaY = 0.0;
+        movementHorizontalCollision = false;
+        movementOnGround = false;
+        movementJumpPressed = false;
+        movementSprintPressed = false;
+        movementRouteIndex = 0;
+        movementRouteLength = 0;
+    }
+
+    private String movementDiagnosticsStatus() {
+        return "movementMode=" + movementMode
+                + " waypoint=" + movementWaypoint
+                + " waypointDeltaY=" + String.format(java.util.Locale.ROOT, "%.2f", movementWaypointDeltaY)
+                + " horizontalCollision=" + movementHorizontalCollision
+                + " onGround=" + movementOnGround
+                + " jumpPressed=" + movementJumpPressed
+                + " sprintPressed=" + movementSprintPressed
+                + " routeIndex=" + movementRouteIndex
+                + " routeLength=" + movementRouteLength;
     }
 
     public String recentRouteStatus() {
