@@ -1,5 +1,6 @@
 package com.foster.bambooclientbot.actions;
 
+import com.foster.bambooclientbot.BambooClientBot;
 import com.foster.bambooclientbot.commands.ItemResolver;
 import com.foster.bambooclientbot.navigation.NavigationGrid;
 import com.foster.bambooclientbot.navigation.PathPlanResult;
@@ -55,6 +56,7 @@ public class ActionExecutor {
     private static final int ROUTE_STUCK_TICKS = 60;
     private static final int ROUTE_MAX_STUCK_REPLANS = 3;
     private static final int FOLLOW_JUMP_COOLDOWN_TICKS = 8;
+    private static final long MOVEMENT_DIAGNOSTICS_LOG_INTERVAL_MILLIS = 1_000L;
     private static final long AUTOSWING_INTERVAL_MILLIS = 1_000L;
     private static final int MAIN_INVENTORY_SLOT_COUNT = 36;
     private static final int TOTAL_INVENTORY_SLOT_COUNT = 41;
@@ -80,6 +82,7 @@ public class ActionExecutor {
     private int gotoStuckTicks;
     private int gotoStuckReplans;
     private int followJumpCooldownTicks;
+    private long lastMovementDiagnosticsLogMillis;
 
     public ActionExecutor(BotState state) {
         this.state = state;
@@ -1047,6 +1050,8 @@ public class ActionExecutor {
         client.options.forwardKey.setPressed(true);
         updateFollowRouteJump(client.options, player, waypoint);
         updateFollowSprint(client.options, player.distanceTo(target));
+        logMovementDiagnostics("follow_route", client.options, player, waypoint, activeFollowRouteIndex,
+                activeFollowRoute.size());
         state.setActiveFollowRoute(
                 activeFollow.actionData(),
                 activeFollowRouteIndex,
@@ -1103,6 +1108,7 @@ public class ActionExecutor {
         client.options.forwardKey.setPressed(true);
         updateGotoJump(client.options, player, waypoint);
         updateFollowSprint(client.options, horizontalDistance);
+        logMovementDiagnostics("goto", client.options, player, waypoint, activeGotoRouteIndex, activeGotoRoute.size());
     }
 
     private void tickTimedMovement(MinecraftClient client) {
@@ -1303,6 +1309,7 @@ public class ActionExecutor {
 
     private void chaseFollowTarget(GameOptions options, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
         Vec3d predicted = new Vec3d(target.getX(), target.getY(), target.getZ()).add(target.getVelocity().multiply(FOLLOW_PREDICTION_TICKS));
+        BlockPos waypoint = BlockPos.ofFloored(predicted.x, predicted.y, predicted.z);
         Vec3d lookTarget = new Vec3d(predicted.x, Math.max(player.getEyeY() - 0.2, target.getY() + ROUTE_LOOK_HEIGHT), predicted.z);
 
         rotateToward(player, lookTarget);
@@ -1310,6 +1317,7 @@ public class ActionExecutor {
         options.forwardKey.setPressed(true);
         updateFollowSprint(options, player.distanceTo(target));
         updateFollowDirectJump(options, player, target);
+        logMovementDiagnostics("follow_direct", options, player, waypoint, 0, 0);
     }
 
     private void updateFollowDirectJump(GameOptions options, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
@@ -1708,6 +1716,27 @@ public class ActionExecutor {
 
         options.jumpKey.setPressed(false);
         state.setFollowJump(false);
+    }
+
+    private void logMovementDiagnostics(String movementMode, GameOptions options, ClientPlayerEntity player,
+                                        BlockPos waypoint, int routeIndex, int routeLength) {
+        long now = System.currentTimeMillis();
+        if (now - lastMovementDiagnosticsLogMillis < MOVEMENT_DIAGNOSTICS_LOG_INTERVAL_MILLIS) {
+            return;
+        }
+
+        lastMovementDiagnosticsLogMillis = now;
+        BambooClientBot.LOGGER.info(
+                "[BambooBot] movement movementMode={} waypointDeltaY={} horizontalCollision={} onGround={} jumpPressed={} sprintPressed={} routeIndex={}/{}",
+                movementMode,
+                String.format(Locale.ROOT, "%.2f", waypoint.getY() - player.getY()),
+                player.horizontalCollision,
+                player.isOnGround(),
+                options.jumpKey.isPressed(),
+                options.sprintKey.isPressed(),
+                routeIndex,
+                routeLength
+        );
     }
 
     private double horizontalDistance(ClientPlayerEntity player, GotoTarget target) {
