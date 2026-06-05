@@ -1061,7 +1061,7 @@ public class ActionExecutor {
         rotateToward(player, followRouteLookTarget(player, activeFollowRoute, activeFollowRouteIndex));
         clearDirectionalKeys(client.options);
         client.options.forwardKey.setPressed(true);
-        updateGotoJump(client.options, player, waypoint);
+        updateFollowRouteJump(client.options, player, waypoint);
         updateFollowSprint(client.options, player.distanceTo(target));
         state.setActiveFollowRoute(
                 activeFollow.actionData(),
@@ -1756,6 +1756,27 @@ public class ActionExecutor {
         boolean blocked = player.horizontalCollision;
 
         if ((targetAbove || blocked) && followJumpCooldownTicks <= 0) {
+            options.jumpKey.setPressed(true);
+            state.setFollowJump(true);
+            followJumpCooldownTicks = FOLLOW_JUMP_COOLDOWN_TICKS;
+            return;
+        }
+
+        options.jumpKey.setPressed(false);
+        state.setFollowJump(false);
+    }
+
+    private void updateFollowRouteJump(GameOptions options, ClientPlayerEntity player, BlockPos waypoint) {
+        if (!canFollowJump(player)) {
+            options.jumpKey.setPressed(false);
+            state.setFollowJump(false);
+            return;
+        }
+
+        boolean waypointAbove = waypoint.getY() - player.getY() >= GOTO_JUMP_TARGET_Y_DELTA
+                && horizontalDistance(player, waypoint) <= FOLLOW_DISTANCE + 2.0;
+
+        if (waypointAbove && followJumpCooldownTicks <= 0) {
             options.jumpKey.setPressed(true);
             state.setFollowJump(true);
             followJumpCooldownTicks = FOLLOW_JUMP_COOLDOWN_TICKS;
