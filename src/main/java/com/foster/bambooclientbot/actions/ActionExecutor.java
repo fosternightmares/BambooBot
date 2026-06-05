@@ -42,7 +42,6 @@ public class ActionExecutor {
     private static final double FOLLOW_SPRINT_DISABLE_DISTANCE = 4.0;
     private static final double FOLLOW_REPLAN_DISTANCE = 2.5;
     private static final double FOLLOW_DIRECT_CHASE_DISTANCE = 12.0;
-    private static final double FOLLOW_DIRECT_CHASE_VERTICAL_DELTA = 2.2;
     private static final double FOLLOW_WAYPOINT_DISTANCE = 1.0;
     private static final int FOLLOW_REPLAN_TICKS = 10;
     private static final int FOLLOW_PREDICTION_TICKS = 10;
@@ -1299,10 +1298,7 @@ public class ActionExecutor {
     }
 
     private boolean canDirectChase(ClientPlayerEntity player, AbstractClientPlayerEntity target) {
-        double verticalDelta = Math.abs(target.getY() - player.getY());
-        return player.distanceTo(target) <= FOLLOW_DIRECT_CHASE_DISTANCE
-                && verticalDelta <= FOLLOW_DIRECT_CHASE_VERTICAL_DELTA
-                && player.canSee(target);
+        return player.distanceTo(target) <= FOLLOW_DIRECT_CHASE_DISTANCE && player.canSee(target);
     }
 
     private void chaseFollowTarget(GameOptions options, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
@@ -1317,9 +1313,9 @@ public class ActionExecutor {
     }
 
     private void updateFollowDirectJump(GameOptions options, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
-        boolean hillTolerantChase = Math.abs(target.getY() - player.getY()) <= FOLLOW_DIRECT_CHASE_VERTICAL_DELTA;
+        boolean flatGroundChase = Math.abs(target.getY() - player.getY()) < 0.5;
 
-        if (!canFollowJump(player) || !hillTolerantChase || player.distanceTo(target) <= FOLLOW_SPRINT_ENABLE_DISTANCE) {
+        if (!canFollowJump(player) || !flatGroundChase || player.distanceTo(target) <= FOLLOW_SPRINT_ENABLE_DISTANCE) {
             options.jumpKey.setPressed(false);
             state.setFollowJump(false);
             return;
