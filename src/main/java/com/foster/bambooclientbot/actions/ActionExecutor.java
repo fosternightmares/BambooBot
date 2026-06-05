@@ -47,6 +47,9 @@ public class ActionExecutor {
     private static final double GOTO_WAYPOINT_DISTANCE = 0.8;
     private static final double GOTO_JUMP_TARGET_Y_DELTA = 0.5;
     private static final double ROUTE_LOOK_HEIGHT = 1.5;
+    private static final double ROUTE_PROGRESS_EPSILON = 0.15;
+    private static final int ROUTE_STUCK_TICKS = 60;
+    private static final int ROUTE_MAX_STUCK_REPLANS = 3;
     private static final int FOLLOW_JUMP_COOLDOWN_TICKS = 8;
     private static final long AUTOSWING_INTERVAL_MILLIS = 1_000L;
     private static final int MAIN_INVENTORY_SLOT_COUNT = 36;
@@ -64,8 +67,14 @@ public class ActionExecutor {
     private int activeFollowRouteIndex;
     private BlockPos activeFollowRouteTarget;
     private int followReplanTicks;
+    private double bestFollowWaypointDistance = Double.POSITIVE_INFINITY;
+    private int followStuckTicks;
+    private int followStuckReplans;
     private List<BlockPos> activeGotoRoute = List.of();
     private int activeGotoRouteIndex;
+    private double bestGotoWaypointDistance = Double.POSITIVE_INFINITY;
+    private int gotoStuckTicks;
+    private int gotoStuckReplans;
     private int followJumpCooldownTicks;
 
     public ActionExecutor(BotState state) {
@@ -955,10 +964,12 @@ public class ActionExecutor {
 
         if (client == null || client.player == null || client.world == null || client.options == null) {
             String targetName = activeFollow.actionData();
+            int replans = followStuckReplans;
+            int stuckTicks = followStuckTicks;
             activeFollow.setStatus(ActionRequest.ActionStatus.FAILED);
             activeFollow = null;
             clearActiveFollowRouteLocal();
-            state.setActiveFollowRoute(targetName, 0, 0, "movement_unavailable");
+            state.setActiveFollowRoute(targetName, 0, 0, "movement_unavailable", replans, stuckTicks);
             stop(client);
             state.setFollowJump(false);
             return;
@@ -969,10 +980,12 @@ public class ActionExecutor {
 
         if (target == null) {
             String targetName = activeFollow.actionData();
+            int replans = followStuckReplans;
+            int stuckTicks = followStuckTicks;
             activeFollow.setStatus(ActionRequest.ActionStatus.FAILED);
             activeFollow = null;
             clearActiveFollowRouteLocal();
-            state.setActiveFollowRoute(targetName, 0, 0, "target_player_not_found");
+            state.setActiveFollowRoute(targetName, 0, 0, "target_player_not_found", replans, stuckTicks);
             stop(client);
             state.setFollowJump(false);
             return;
@@ -998,14 +1011,31 @@ public class ActionExecutor {
             return;
         }
 
+        int previousRouteIndex = activeFollowRouteIndex;
         activeFollowRouteIndex = routeIndexFor(player, activeFollowRoute, activeFollowRouteIndex);
+        if (activeFollowRouteIndex != previousRouteIndex) {
+            resetFollowStuckTracking();
+        }
+
         BlockPos waypoint = activeFollowRoute.get(activeFollowRouteIndex);
+        double waypointDistance = horizontalDistance(player, waypoint);
+        if (isFollowRouteStuck(client, player, target, waypointDistance)) {
+            return;
+        }
+
         rotateToward(player, routeLookTarget(player, activeFollowRoute, activeFollowRouteIndex));
         clearDirectionalKeys(client.options);
         client.options.forwardKey.setPressed(true);
         updateFollowRouteJump(client.options, player, waypoint);
         updateFollowSprint(client.options, player.distanceTo(target));
-        state.setActiveFollowRoute(activeFollow.actionData(), activeFollowRouteIndex, activeFollowRoute.size(), "success");
+        state.setActiveFollowRoute(
+                activeFollow.actionData(),
+                activeFollowRouteIndex,
+                activeFollowRoute.size(),
+                "success",
+                followStuckReplans,
+                followStuckTicks
+        );
     }
 
     private void tickGoto(MinecraftClient client) {
@@ -1023,7 +1053,7 @@ public class ActionExecutor {
         ClientPlayerEntity player = client.player;
         double horizontalDistance = horizontalDistance(player, target);
         double verticalDifference = Math.abs(player.getY() - target.y());
-        state.setActiveGoto(target, horizontalDistance, activeGotoRouteIndex, activeGotoRoute.size());
+        state.setActiveGoto(target, horizontalDistance, activeGotoRouteIndex, activeGotoRoute.size(), gotoStuckReplans, gotoStuckTicks);
 
         if (horizontalDistance <= GOTO_HORIZONTAL_ARRIVAL_DISTANCE
                 && verticalDifference <= GOTO_VERTICAL_ARRIVAL_DISTANCE) {
@@ -1037,7 +1067,17 @@ public class ActionExecutor {
             return;
         }
 
+        int previousRouteIndex = activeGotoRouteIndex;
         BlockPos waypoint = currentGotoWaypoint(player);
+        if (activeGotoRouteIndex != previousRouteIndex) {
+            resetGotoStuckTracking();
+        }
+
+        double waypointDistance = horizontalDistance(player, waypoint);
+        if (isGotoRouteStuck(client, player, target, waypointDistance)) {
+            return;
+        }
+
         rotateToward(player, routeLookTarget(player, activeGotoRoute, activeGotoRouteIndex));
         tickFollowJumpCooldown();
         clearDirectionalKeys(client.options);
@@ -1199,14 +1239,22 @@ public class ActionExecutor {
             activeFollowRoute = List.of();
             activeFollowRouteIndex = 0;
             activeFollowRouteTarget = targetPosition;
-            state.setActiveFollowRoute(activeFollow.actionData(), 0, 0, plan.reason());
+            state.setActiveFollowRoute(activeFollow.actionData(), 0, 0, plan.reason(), followStuckReplans, followStuckTicks);
             return;
         }
 
         activeFollowRoute = plan.path();
         activeFollowRouteIndex = activeFollowRoute.size() > 1 ? 1 : 0;
         activeFollowRouteTarget = targetPosition;
-        state.setActiveFollowRoute(activeFollow.actionData(), activeFollowRouteIndex, activeFollowRoute.size(), "success");
+        resetFollowStuckTracking();
+        state.setActiveFollowRoute(
+                activeFollow.actionData(),
+                activeFollowRouteIndex,
+                activeFollowRoute.size(),
+                "success",
+                followStuckReplans,
+                followStuckTicks
+        );
     }
 
     private void clearActiveFollowRoute() {
@@ -1219,6 +1267,41 @@ public class ActionExecutor {
         activeFollowRouteIndex = 0;
         activeFollowRouteTarget = null;
         followReplanTicks = 0;
+        bestFollowWaypointDistance = Double.POSITIVE_INFINITY;
+        followStuckTicks = 0;
+        followStuckReplans = 0;
+    }
+
+    private boolean isFollowRouteStuck(MinecraftClient client, ClientPlayerEntity player, AbstractClientPlayerEntity target,
+                                       double waypointDistance) {
+        if (state.followJump()) {
+            return false;
+        }
+
+        if (recordRouteProgress(waypointDistance, true)) {
+            return false;
+        }
+
+        if (followStuckTicks < ROUTE_STUCK_TICKS) {
+            return false;
+        }
+
+        followStuckReplans++;
+
+        if (followStuckReplans > ROUTE_MAX_STUCK_REPLANS) {
+            String targetName = activeFollow.actionData();
+            int finalReplans = followStuckReplans;
+            activeFollow.setStatus(ActionRequest.ActionStatus.FAILED);
+            activeFollow = null;
+            clearActiveFollowRouteLocal();
+            state.setActiveFollowRoute(targetName, 0, 0, "stuck", finalReplans, ROUTE_STUCK_TICKS);
+            stop(client);
+            return true;
+        }
+
+        resetFollowStuckTracking();
+        planFollowRoute(client, player, target);
+        return true;
     }
 
     private void startGoto(MinecraftClient client, ActionRequest request) {
@@ -1228,11 +1311,15 @@ public class ActionExecutor {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
             state.setLastGotoResult(new GotoResult(target, "failed", "movement_unavailable"));
             state.clearActiveGoto();
+            gotoStuckReplans = 0;
+            resetGotoStuckTracking();
             state.queueChatMessage("goto failed");
             return;
         }
 
         cancelActiveGoto("goto_cancelled");
+        gotoStuckReplans = 0;
+        resetGotoStuckTracking();
         BlockPos start = client.player.getBlockPos();
         BlockPos targetPosition = BlockPos.ofFloored(target.x(), target.y(), target.z());
         PathPlanResult plan = pathPlanner.plan(client.world, start, targetPosition);
@@ -1271,9 +1358,62 @@ public class ActionExecutor {
         activeGotoRoute = plan.path();
         activeGotoRouteIndex = activeGotoRoute.size() > 1 ? 1 : 0;
         rotateToward(client.player, routeLookTarget(client.player, activeGotoRoute, activeGotoRouteIndex));
-        state.setActiveGoto(target, horizontalDistance, activeGotoRouteIndex, activeGotoRoute.size());
+        resetGotoStuckTracking();
+        state.setActiveGoto(target, horizontalDistance, activeGotoRouteIndex, activeGotoRoute.size(), gotoStuckReplans, gotoStuckTicks);
         activeGoto = request;
         state.queueChatMessage("going to " + target.formatForChat());
+    }
+
+    private boolean isGotoRouteStuck(MinecraftClient client, ClientPlayerEntity player, GotoTarget target,
+                                     double waypointDistance) {
+        if (state.followJump()) {
+            return false;
+        }
+
+        if (recordRouteProgress(waypointDistance, false)) {
+            return false;
+        }
+
+        if (gotoStuckTicks < ROUTE_STUCK_TICKS) {
+            return false;
+        }
+
+        gotoStuckReplans++;
+
+        if (gotoStuckReplans > ROUTE_MAX_STUCK_REPLANS) {
+            failGoto(client, "stuck");
+            return true;
+        }
+
+        resetGotoStuckTracking();
+        replanGotoRoute(client, player, target);
+        return true;
+    }
+
+    private void replanGotoRoute(MinecraftClient client, ClientPlayerEntity player, GotoTarget target) {
+        if (client.world == null || activeGoto == null) {
+            failGoto(client, "movement_unavailable");
+            return;
+        }
+
+        BlockPos targetPosition = BlockPos.ofFloored(target.x(), target.y(), target.z());
+        PathPlanResult plan = pathPlanner.plan(client.world, player.getBlockPos(), targetPosition);
+
+        if (!plan.found()) {
+            return;
+        }
+
+        activeGotoRoute = plan.path();
+        activeGotoRouteIndex = activeGotoRoute.size() > 1 ? 1 : 0;
+        resetGotoStuckTracking();
+        state.setActiveGoto(
+                target,
+                horizontalDistance(player, target),
+                activeGotoRouteIndex,
+                activeGotoRoute.size(),
+                gotoStuckReplans,
+                gotoStuckTicks
+        );
     }
 
     private void failGoto(MinecraftClient client, String reason) {
@@ -1284,11 +1424,16 @@ public class ActionExecutor {
         }
 
         stop(client);
-        state.setLastGotoResult(new GotoResult(target, "failed", reason));
+        if ("stuck".equals(reason)) {
+            state.setLastGotoResult(new GotoResult(target, "stuck", ""));
+        } else {
+            state.setLastGotoResult(new GotoResult(target, "failed", reason));
+        }
         state.clearActiveGoto();
         activeGoto = null;
         activeGotoRoute = List.of();
         activeGotoRouteIndex = 0;
+        resetGotoStuckTracking();
     }
 
     private void cancelActiveGoto(String reason) {
@@ -1302,6 +1447,7 @@ public class ActionExecutor {
         activeGoto = null;
         activeGotoRoute = List.of();
         activeGotoRouteIndex = 0;
+        resetGotoStuckTracking();
         state.clearActiveGoto();
     }
 
@@ -1396,6 +1542,38 @@ public class ActionExecutor {
         }
 
         return routeIndex;
+    }
+
+    private boolean recordRouteProgress(double waypointDistance, boolean followRoute) {
+        if (followRoute) {
+            if (waypointDistance + ROUTE_PROGRESS_EPSILON < bestFollowWaypointDistance) {
+                bestFollowWaypointDistance = waypointDistance;
+                followStuckTicks = 0;
+                return true;
+            }
+
+            followStuckTicks++;
+            return false;
+        }
+
+        if (waypointDistance + ROUTE_PROGRESS_EPSILON < bestGotoWaypointDistance) {
+            bestGotoWaypointDistance = waypointDistance;
+            gotoStuckTicks = 0;
+            return true;
+        }
+
+        gotoStuckTicks++;
+        return false;
+    }
+
+    private void resetFollowStuckTracking() {
+        bestFollowWaypointDistance = Double.POSITIVE_INFINITY;
+        followStuckTicks = 0;
+    }
+
+    private void resetGotoStuckTracking() {
+        bestGotoWaypointDistance = Double.POSITIVE_INFINITY;
+        gotoStuckTicks = 0;
     }
 
     private Vec3d waypointCenter(BlockPos waypoint) {

@@ -23,11 +23,15 @@ public class BotState {
     private double activeGotoDistance;
     private int activeGotoRouteIndex;
     private int activeGotoRouteLength;
+    private int activeGotoReplans;
+    private int activeGotoStuckTicks;
     private GotoResult lastGotoResult;
     private String activeFollowTarget = "";
     private int activeFollowRouteIndex;
     private int activeFollowRouteLength;
     private String activeFollowRouteResult = "none";
+    private int activeFollowRouteReplans;
+    private int activeFollowRouteStuckTicks;
     private boolean followJump;
     private boolean autoSwing;
     private long lastSwingTimeMillis;
@@ -145,11 +149,14 @@ public class BotState {
         return lastDropResult.format();
     }
 
-    public void setActiveGoto(GotoTarget target, double distance, int routeIndex, int routeLength) {
+    public void setActiveGoto(GotoTarget target, double distance, int routeIndex, int routeLength,
+                              int replans, int stuckTicks) {
         this.activeGotoTarget = target;
         this.activeGotoDistance = distance;
         this.activeGotoRouteIndex = routeIndex;
         this.activeGotoRouteLength = routeLength;
+        this.activeGotoReplans = replans;
+        this.activeGotoStuckTicks = stuckTicks;
     }
 
     public void clearActiveGoto() {
@@ -157,6 +164,8 @@ public class BotState {
         activeGotoDistance = 0.0;
         activeGotoRouteIndex = 0;
         activeGotoRouteLength = 0;
+        activeGotoReplans = 0;
+        activeGotoStuckTicks = 0;
     }
 
     public void setLastGotoResult(GotoResult lastGotoResult) {
@@ -174,14 +183,19 @@ public class BotState {
                 + " routeIndex=" + activeGotoRouteIndex
                 + " routeLength=" + activeGotoRouteLength
                 + " distance=" + String.format(java.util.Locale.ROOT, "%.1f", activeGotoDistance)
+                + " replans=" + activeGotoReplans
+                + " stuckTicks=" + activeGotoStuckTicks
                 + " " + lastGoto;
     }
 
-    public void setActiveFollowRoute(String targetPlayer, int routeIndex, int routeLength, String result) {
+    public void setActiveFollowRoute(String targetPlayer, int routeIndex, int routeLength, String result,
+                                     int replans, int stuckTicks) {
         activeFollowTarget = targetPlayer;
         activeFollowRouteIndex = routeIndex;
         activeFollowRouteLength = routeLength;
         activeFollowRouteResult = result;
+        activeFollowRouteReplans = replans;
+        activeFollowRouteStuckTicks = stuckTicks;
     }
 
     public void clearActiveFollowRoute() {
@@ -189,6 +203,8 @@ public class BotState {
         activeFollowRouteIndex = 0;
         activeFollowRouteLength = 0;
         activeFollowRouteResult = "none";
+        activeFollowRouteReplans = 0;
+        activeFollowRouteStuckTicks = 0;
     }
 
     public String followRouteStatus() {
@@ -199,7 +215,9 @@ public class BotState {
         return "followRoute=true target=" + activeFollowTarget
                 + " routeIndex=" + activeFollowRouteIndex
                 + " routeLength=" + activeFollowRouteLength
-                + " result=" + activeFollowRouteResult;
+                + " result=" + activeFollowRouteResult
+                + " replans=" + activeFollowRouteReplans
+                + " stuckTicks=" + activeFollowRouteStuckTicks;
     }
 
     public void setFollowJump(boolean followJump) {
