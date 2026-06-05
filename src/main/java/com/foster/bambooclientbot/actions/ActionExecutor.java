@@ -1775,8 +1775,9 @@ public class ActionExecutor {
 
         boolean waypointAbove = waypoint.getY() - player.getY() >= GOTO_JUMP_TARGET_Y_DELTA
                 && horizontalDistance(player, waypoint) <= FOLLOW_DISTANCE + 2.0;
+        boolean blocked = player.horizontalCollision;
 
-        if (waypointAbove && followJumpCooldownTicks <= 0) {
+        if ((waypointAbove || blocked) && followJumpCooldownTicks <= 0) {
             options.jumpKey.setPressed(true);
             state.setFollowJump(true);
             followJumpCooldownTicks = FOLLOW_JUMP_COOLDOWN_TICKS;
