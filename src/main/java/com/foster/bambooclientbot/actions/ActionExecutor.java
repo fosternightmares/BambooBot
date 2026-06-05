@@ -40,11 +40,12 @@ public class ActionExecutor {
     private static final double FOLLOW_DISTANCE = 3.0;
     private static final double FOLLOW_SPRINT_ENABLE_DISTANCE = 6.0;
     private static final double FOLLOW_SPRINT_DISABLE_DISTANCE = 4.0;
+    private static final double FOLLOW_REPLAN_DISTANCE = 2.5;
+    private static final int FOLLOW_REPLAN_TICKS = 40;
     private static final double GOTO_HORIZONTAL_ARRIVAL_DISTANCE = 1.5;
     private static final double GOTO_VERTICAL_ARRIVAL_DISTANCE = 2.0;
     private static final double GOTO_WAYPOINT_DISTANCE = 0.8;
     private static final double GOTO_JUMP_TARGET_Y_DELTA = 0.5;
-    private static final double FOLLOW_JUMP_TARGET_Y_DELTA = 0.5;
     private static final int FOLLOW_JUMP_COOLDOWN_TICKS = 8;
     private static final long AUTOSWING_INTERVAL_MILLIS = 1_000L;
     private static final int MAIN_INVENTORY_SLOT_COUNT = 36;
@@ -58,6 +59,10 @@ public class ActionExecutor {
     private ActionRequest activeApproach;
     private ActionRequest activeFollow;
     private ActionRequest activeGoto;
+    private List<BlockPos> activeFollowRoute = List.of();
+    private int activeFollowRouteIndex;
+    private BlockPos activeFollowRouteTarget;
+    private int followReplanTicks;
     private List<BlockPos> activeGotoRoute = List.of();
     private int activeGotoRouteIndex;
     private int followJumpCooldownTicks;
@@ -94,6 +99,7 @@ public class ActionExecutor {
             if (request.actionType() == ActionRequest.ActionType.STOP) {
                 activeApproach = null;
                 activeFollow = null;
+                clearActiveFollowRoute();
                 cancelActiveGoto("goto_cancelled");
                 timedMovement = null;
                 timedMovementTicksRemaining = 0;
@@ -947,11 +953,13 @@ public class ActionExecutor {
         }
 
         if (client == null || client.player == null || client.world == null || client.options == null) {
+            String targetName = activeFollow.actionData();
             activeFollow.setStatus(ActionRequest.ActionStatus.FAILED);
             activeFollow = null;
+            clearActiveFollowRouteLocal();
+            state.setActiveFollowRoute(targetName, 0, 0, "movement_unavailable");
             stop(client);
             state.setFollowJump(false);
-            state.queueChatMessage("action failed");
             return;
         }
 
@@ -959,30 +967,44 @@ public class ActionExecutor {
         AbstractClientPlayerEntity target = findTargetPlayer(client, player, activeFollow.actionData());
 
         if (target == null) {
+            String targetName = activeFollow.actionData();
             activeFollow.setStatus(ActionRequest.ActionStatus.FAILED);
             activeFollow = null;
+            clearActiveFollowRouteLocal();
+            state.setActiveFollowRoute(targetName, 0, 0, "target_player_not_found");
             stop(client);
             state.setFollowJump(false);
-            state.queueChatMessage("player not found");
             return;
         }
 
-        rotateToward(player, target.getEyePos());
-        tickFollowJumpCooldown();
-        boolean movingForward = false;
-
-        if (player.distanceTo(target) > FOLLOW_DISTANCE) {
-            clearDirectionalKeys(client.options);
-            client.options.forwardKey.setPressed(true);
-            movingForward = true;
-        } else {
+        if (player.distanceTo(target) <= FOLLOW_DISTANCE) {
             clearDirectionalKeys(client.options);
             client.options.jumpKey.setPressed(false);
+            client.options.sprintKey.setPressed(false);
             state.setFollowJump(false);
+            clearActiveFollowRoute();
+            return;
         }
 
-        updateFollowJump(client.options, player, target, movingForward);
+        tickFollowJumpCooldown();
+        tickFollowReplan(client, player, target);
+
+        if (activeFollowRoute.isEmpty()) {
+            clearDirectionalKeys(client.options);
+            client.options.jumpKey.setPressed(false);
+            client.options.sprintKey.setPressed(false);
+            state.setFollowJump(false);
+            return;
+        }
+
+        activeFollowRouteIndex = routeIndexFor(player, activeFollowRoute, activeFollowRouteIndex);
+        BlockPos waypoint = activeFollowRoute.get(activeFollowRouteIndex);
+        rotateToward(player, waypointCenter(waypoint));
+        clearDirectionalKeys(client.options);
+        client.options.forwardKey.setPressed(true);
+        updateFollowRouteJump(client.options, player, waypoint);
         updateFollowSprint(client.options, player.distanceTo(target));
+        state.setActiveFollowRoute(activeFollow.actionData(), activeFollowRouteIndex, activeFollowRoute.size(), "success");
     }
 
     private void tickGoto(MinecraftClient client) {
@@ -1056,6 +1078,7 @@ public class ActionExecutor {
 
         activeApproach = null;
         activeFollow = null;
+        clearActiveFollowRoute();
         cancelActiveGoto("goto_cancelled");
         followJumpCooldownTicks = 0;
         GameOptions options = client.options;
@@ -1103,6 +1126,7 @@ public class ActionExecutor {
         timedMovement = null;
         timedMovementTicksRemaining = 0;
         activeFollow = null;
+        clearActiveFollowRoute();
         cancelActiveGoto("goto_cancelled");
         followJumpCooldownTicks = 0;
         clearDirectionalKeys(client.options);
@@ -1135,19 +1159,66 @@ public class ActionExecutor {
         timedMovementTicksRemaining = 0;
         activeApproach = null;
         cancelActiveGoto("goto_cancelled");
+        clearActiveFollowRoute();
         followJumpCooldownTicks = 0;
         clearDirectionalKeys(client.options);
         client.options.sprintKey.setPressed(false);
-        rotateToward(player, target.getEyePos());
-
-        if (player.distanceTo(target) > FOLLOW_DISTANCE) {
-            client.options.forwardKey.setPressed(true);
-        }
-
-        updateFollowSprint(client.options, player.distanceTo(target));
+        client.options.jumpKey.setPressed(false);
         state.setFollowJump(false);
         activeFollow = request;
+        followReplanTicks = 0;
+        planFollowRoute(client, player, target);
         state.queueChatMessage("following " + request.actionData());
+    }
+
+    private void tickFollowReplan(MinecraftClient client, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
+        if (followReplanTicks > 0) {
+            followReplanTicks--;
+        }
+
+        BlockPos targetPosition = target.getBlockPos();
+        boolean targetMoved = activeFollowRouteTarget == null
+                || activeFollowRouteTarget.getSquaredDistance(targetPosition) > FOLLOW_REPLAN_DISTANCE * FOLLOW_REPLAN_DISTANCE;
+
+        if (activeFollowRoute.isEmpty() || targetMoved || followReplanTicks <= 0) {
+            planFollowRoute(client, player, target);
+        }
+    }
+
+    private void planFollowRoute(MinecraftClient client, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
+        if (client.world == null || activeFollow == null) {
+            clearActiveFollowRoute();
+            return;
+        }
+
+        BlockPos targetPosition = target.getBlockPos();
+        PathPlanResult plan = pathPlanner.plan(client.world, player.getBlockPos(), targetPosition);
+        followReplanTicks = FOLLOW_REPLAN_TICKS;
+
+        if (!plan.found()) {
+            activeFollowRoute = List.of();
+            activeFollowRouteIndex = 0;
+            activeFollowRouteTarget = targetPosition;
+            state.setActiveFollowRoute(activeFollow.actionData(), 0, 0, plan.reason());
+            return;
+        }
+
+        activeFollowRoute = plan.path();
+        activeFollowRouteIndex = activeFollowRoute.size() > 1 ? 1 : 0;
+        activeFollowRouteTarget = targetPosition;
+        state.setActiveFollowRoute(activeFollow.actionData(), activeFollowRouteIndex, activeFollowRoute.size(), "success");
+    }
+
+    private void clearActiveFollowRoute() {
+        clearActiveFollowRouteLocal();
+        state.clearActiveFollowRoute();
+    }
+
+    private void clearActiveFollowRouteLocal() {
+        activeFollowRoute = List.of();
+        activeFollowRouteIndex = 0;
+        activeFollowRouteTarget = null;
+        followReplanTicks = 0;
     }
 
     private void startGoto(MinecraftClient client, ActionRequest request) {
@@ -1178,6 +1249,7 @@ public class ActionExecutor {
         timedMovementTicksRemaining = 0;
         activeApproach = null;
         activeFollow = null;
+        clearActiveFollowRoute();
         followJumpCooldownTicks = 0;
 
         double horizontalDistance = horizontalDistance(client.player, target);
@@ -1310,35 +1382,20 @@ public class ActionExecutor {
         }
     }
 
-    private void updateFollowJump(GameOptions options, ClientPlayerEntity player, AbstractClientPlayerEntity target, boolean movingForward) {
-        if (!movingForward || !canFollowJump(player)) {
-            options.jumpKey.setPressed(false);
-            state.setFollowJump(false);
-            return;
-        }
-
-        boolean targetAbove = target.getY() - player.getY() >= FOLLOW_JUMP_TARGET_Y_DELTA
-                && player.distanceTo(target) <= FOLLOW_DISTANCE + 2.0;
-        boolean blocked = player.horizontalCollision;
-
-        if ((targetAbove || blocked) && followJumpCooldownTicks <= 0) {
-            options.jumpKey.setPressed(true);
-            state.setFollowJump(true);
-            followJumpCooldownTicks = FOLLOW_JUMP_COOLDOWN_TICKS;
-            return;
-        }
-
-        options.jumpKey.setPressed(false);
-        state.setFollowJump(false);
+    private BlockPos currentGotoWaypoint(ClientPlayerEntity player) {
+        activeGotoRouteIndex = routeIndexFor(player, activeGotoRoute, activeGotoRouteIndex);
+        return activeGotoRoute.get(activeGotoRouteIndex);
     }
 
-    private BlockPos currentGotoWaypoint(ClientPlayerEntity player) {
-        while (activeGotoRouteIndex < activeGotoRoute.size() - 1
-                && horizontalDistance(player, activeGotoRoute.get(activeGotoRouteIndex)) <= GOTO_WAYPOINT_DISTANCE) {
-            activeGotoRouteIndex++;
+    private int routeIndexFor(ClientPlayerEntity player, List<BlockPos> route, int currentIndex) {
+        int routeIndex = currentIndex;
+
+        while (routeIndex < route.size() - 1
+                && horizontalDistance(player, route.get(routeIndex)) <= GOTO_WAYPOINT_DISTANCE) {
+            routeIndex++;
         }
 
-        return activeGotoRoute.get(activeGotoRouteIndex);
+        return routeIndex;
     }
 
     private Vec3d waypointCenter(BlockPos waypoint) {
@@ -1357,6 +1414,27 @@ public class ActionExecutor {
         boolean blocked = player.horizontalCollision;
 
         if ((targetAbove || blocked) && followJumpCooldownTicks <= 0) {
+            options.jumpKey.setPressed(true);
+            state.setFollowJump(true);
+            followJumpCooldownTicks = FOLLOW_JUMP_COOLDOWN_TICKS;
+            return;
+        }
+
+        options.jumpKey.setPressed(false);
+        state.setFollowJump(false);
+    }
+
+    private void updateFollowRouteJump(GameOptions options, ClientPlayerEntity player, BlockPos waypoint) {
+        if (!canFollowJump(player)) {
+            options.jumpKey.setPressed(false);
+            state.setFollowJump(false);
+            return;
+        }
+
+        boolean waypointAbove = waypoint.getY() - player.getY() >= GOTO_JUMP_TARGET_Y_DELTA
+                && horizontalDistance(player, waypoint) <= FOLLOW_DISTANCE + 2.0;
+
+        if (waypointAbove && followJumpCooldownTicks <= 0) {
             options.jumpKey.setPressed(true);
             state.setFollowJump(true);
             followJumpCooldownTicks = FOLLOW_JUMP_COOLDOWN_TICKS;

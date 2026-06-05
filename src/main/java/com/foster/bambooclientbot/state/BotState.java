@@ -24,6 +24,10 @@ public class BotState {
     private int activeGotoRouteIndex;
     private int activeGotoRouteLength;
     private GotoResult lastGotoResult;
+    private String activeFollowTarget = "";
+    private int activeFollowRouteIndex;
+    private int activeFollowRouteLength;
+    private String activeFollowRouteResult = "none";
     private boolean followJump;
     private boolean autoSwing;
     private long lastSwingTimeMillis;
@@ -171,6 +175,31 @@ public class BotState {
                 + " routeLength=" + activeGotoRouteLength
                 + " distance=" + String.format(java.util.Locale.ROOT, "%.1f", activeGotoDistance)
                 + " " + lastGoto;
+    }
+
+    public void setActiveFollowRoute(String targetPlayer, int routeIndex, int routeLength, String result) {
+        activeFollowTarget = targetPlayer;
+        activeFollowRouteIndex = routeIndex;
+        activeFollowRouteLength = routeLength;
+        activeFollowRouteResult = result;
+    }
+
+    public void clearActiveFollowRoute() {
+        activeFollowTarget = "";
+        activeFollowRouteIndex = 0;
+        activeFollowRouteLength = 0;
+        activeFollowRouteResult = "none";
+    }
+
+    public String followRouteStatus() {
+        if (activeFollowTarget == null || activeFollowTarget.isBlank()) {
+            return "followRoute=none";
+        }
+
+        return "followRoute=true target=" + activeFollowTarget
+                + " routeIndex=" + activeFollowRouteIndex
+                + " routeLength=" + activeFollowRouteLength
+                + " result=" + activeFollowRouteResult;
     }
 
     public void setFollowJump(boolean followJump) {
