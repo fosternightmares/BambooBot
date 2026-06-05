@@ -42,14 +42,9 @@ public class ActionExecutor {
     private static final double FOLLOW_SPRINT_DISABLE_DISTANCE = 4.0;
     private static final double FOLLOW_REPLAN_DISTANCE = 2.5;
     private static final double FOLLOW_DIRECT_CHASE_DISTANCE = 12.0;
-    private static final double FOLLOW_DIRECT_CHASE_EXIT_DISTANCE = 14.0;
-    private static final double FOLLOW_DIRECT_CHASE_ENTER_VERTICAL_DISTANCE = 0.5;
-    private static final double FOLLOW_DIRECT_CHASE_EXIT_VERTICAL_DISTANCE = 1.0;
     private static final double FOLLOW_WAYPOINT_DISTANCE = 1.0;
     private static final int FOLLOW_REPLAN_TICKS = 10;
     private static final int FOLLOW_PREDICTION_TICKS = 10;
-    private static final int FOLLOW_DIRECT_CHASE_ENTER_TICKS = 5;
-    private static final int FOLLOW_RECOVERY_TICKS = 20;
     private static final int FOLLOW_ROUTE_LOOKAHEAD_STEPS = 2;
     private static final double GOTO_HORIZONTAL_ARRIVAL_DISTANCE = 1.5;
     private static final double GOTO_VERTICAL_ARRIVAL_DISTANCE = 2.0;
@@ -75,9 +70,6 @@ public class ActionExecutor {
     private List<BlockPos> activeFollowRoute = List.of();
     private int activeFollowRouteIndex;
     private BlockPos activeFollowRouteTarget;
-    private FollowMode followMode = FollowMode.ROUTE;
-    private int directChaseStableTicks;
-    private int followRecoveryTicks;
     private int followReplanTicks;
     private double bestFollowWaypointDistance = Double.POSITIVE_INFINITY;
     private int followStuckTicks;
@@ -91,12 +83,6 @@ public class ActionExecutor {
 
     public ActionExecutor(BotState state) {
         this.state = state;
-    }
-
-    private enum FollowMode {
-        ROUTE,
-        DIRECT_CHASE,
-        RECOVERY
     }
 
     public void tick(MinecraftClient client) {
@@ -987,7 +973,7 @@ public class ActionExecutor {
             activeFollow.setStatus(ActionRequest.ActionStatus.FAILED);
             activeFollow = null;
             clearActiveFollowRouteLocal();
-            state.setActiveFollowRoute(targetName, followMode.name(), 0, 0, "movement_unavailable", replans, stuckTicks);
+            state.setActiveFollowRoute(targetName, 0, 0, "movement_unavailable", replans, stuckTicks);
             stop(client);
             state.setFollowJump(false);
             return;
@@ -1003,7 +989,7 @@ public class ActionExecutor {
             activeFollow.setStatus(ActionRequest.ActionStatus.FAILED);
             activeFollow = null;
             clearActiveFollowRouteLocal();
-            state.setActiveFollowRoute(targetName, followMode.name(), 0, 0, "target_player_not_found", replans, stuckTicks);
+            state.setActiveFollowRoute(targetName, 0, 0, "target_player_not_found", replans, stuckTicks);
             stop(client);
             state.setFollowJump(false);
             return;
@@ -1019,14 +1005,12 @@ public class ActionExecutor {
         }
 
         tickFollowJumpCooldown();
-        updateFollowMode(player, target);
 
-        if (followMode == FollowMode.DIRECT_CHASE) {
-            clearActiveFollowRoutePath();
+        if (canDirectChase(player, target)) {
+            clearActiveFollowRouteLocal();
             chaseFollowTarget(client.options, player, target);
             state.setActiveFollowRoute(
                     activeFollow.actionData(),
-                    followMode.name(),
                     0,
                     0,
                     "success",
@@ -1065,7 +1049,6 @@ public class ActionExecutor {
         updateFollowSprint(client.options, player.distanceTo(target));
         state.setActiveFollowRoute(
                 activeFollow.actionData(),
-                followMode.name(),
                 activeFollowRouteIndex,
                 activeFollowRoute.size(),
                 "success",
@@ -1242,9 +1225,6 @@ public class ActionExecutor {
         client.options.jumpKey.setPressed(false);
         state.setFollowJump(false);
         activeFollow = request;
-        followMode = FollowMode.ROUTE;
-        directChaseStableTicks = 0;
-        followRecoveryTicks = 0;
         followReplanTicks = 0;
         planFollowRoute(client, player, target);
         state.queueChatMessage("following " + request.actionData());
@@ -1278,15 +1258,7 @@ public class ActionExecutor {
             activeFollowRoute = List.of();
             activeFollowRouteIndex = 0;
             activeFollowRouteTarget = targetPosition;
-            state.setActiveFollowRoute(
-                    activeFollow.actionData(),
-                    followMode.name(),
-                    0,
-                    0,
-                    plan.reason(),
-                    followStuckReplans,
-                    followStuckTicks
-            );
+            state.setActiveFollowRoute(activeFollow.actionData(), 0, 0, plan.reason(), followStuckReplans, followStuckTicks);
             return;
         }
 
@@ -1296,7 +1268,6 @@ public class ActionExecutor {
         resetFollowStuckTracking();
         state.setActiveFollowRoute(
                 activeFollow.actionData(),
-                followMode.name(),
                 activeFollowRouteIndex,
                 activeFollowRoute.size(),
                 "success",
@@ -1307,24 +1278,17 @@ public class ActionExecutor {
 
     private void clearActiveFollowRoute() {
         clearActiveFollowRouteLocal();
-        followMode = FollowMode.ROUTE;
-        directChaseStableTicks = 0;
-        followRecoveryTicks = 0;
-        followStuckReplans = 0;
         state.clearActiveFollowRoute();
     }
 
     private void clearActiveFollowRouteLocal() {
-        clearActiveFollowRoutePath();
-        followReplanTicks = 0;
-        bestFollowWaypointDistance = Double.POSITIVE_INFINITY;
-        followStuckTicks = 0;
-    }
-
-    private void clearActiveFollowRoutePath() {
         activeFollowRoute = List.of();
         activeFollowRouteIndex = 0;
         activeFollowRouteTarget = null;
+        followReplanTicks = 0;
+        bestFollowWaypointDistance = Double.POSITIVE_INFINITY;
+        followStuckTicks = 0;
+        followStuckReplans = 0;
     }
 
     private BlockPos predictedFollowTarget(AbstractClientPlayerEntity target) {
@@ -1334,45 +1298,7 @@ public class ActionExecutor {
     }
 
     private boolean canDirectChase(ClientPlayerEntity player, AbstractClientPlayerEntity target) {
-        return player.distanceTo(target) <= FOLLOW_DIRECT_CHASE_DISTANCE
-                && Math.abs(target.getY() - player.getY()) < FOLLOW_DIRECT_CHASE_ENTER_VERTICAL_DISTANCE
-                && player.canSee(target);
-    }
-
-    private boolean canStayDirectChase(ClientPlayerEntity player, AbstractClientPlayerEntity target) {
-        return player.distanceTo(target) <= FOLLOW_DIRECT_CHASE_EXIT_DISTANCE
-                && Math.abs(target.getY() - player.getY()) < FOLLOW_DIRECT_CHASE_EXIT_VERTICAL_DISTANCE
-                && player.canSee(target);
-    }
-
-    private void updateFollowMode(ClientPlayerEntity player, AbstractClientPlayerEntity target) {
-        if (followRecoveryTicks > 0) {
-            followRecoveryTicks--;
-            followMode = FollowMode.RECOVERY;
-            directChaseStableTicks = 0;
-            return;
-        }
-
-        if (followMode == FollowMode.DIRECT_CHASE) {
-            if (canStayDirectChase(player, target)) {
-                return;
-            }
-
-            followMode = FollowMode.ROUTE;
-            directChaseStableTicks = 0;
-            return;
-        }
-
-        if (canDirectChase(player, target)) {
-            directChaseStableTicks++;
-
-            if (directChaseStableTicks >= FOLLOW_DIRECT_CHASE_ENTER_TICKS) {
-                followMode = FollowMode.DIRECT_CHASE;
-            }
-        } else {
-            followMode = FollowMode.ROUTE;
-            directChaseStableTicks = 0;
-        }
+        return player.distanceTo(target) <= FOLLOW_DIRECT_CHASE_DISTANCE && player.canSee(target);
     }
 
     private void chaseFollowTarget(GameOptions options, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
@@ -1428,15 +1354,12 @@ public class ActionExecutor {
             activeFollow.setStatus(ActionRequest.ActionStatus.FAILED);
             activeFollow = null;
             clearActiveFollowRouteLocal();
-            state.setActiveFollowRoute(targetName, followMode.name(), 0, 0, "stuck", finalReplans, ROUTE_STUCK_TICKS);
+            state.setActiveFollowRoute(targetName, 0, 0, "stuck", finalReplans, ROUTE_STUCK_TICKS);
             stop(client);
             return true;
         }
 
         resetFollowStuckTracking();
-        followMode = FollowMode.RECOVERY;
-        followRecoveryTicks = FOLLOW_RECOVERY_TICKS;
-        directChaseStableTicks = 0;
         planFollowRoute(client, player, target);
         return true;
     }
@@ -1775,9 +1698,8 @@ public class ActionExecutor {
 
         boolean waypointAbove = waypoint.getY() - player.getY() >= GOTO_JUMP_TARGET_Y_DELTA
                 && horizontalDistance(player, waypoint) <= FOLLOW_DISTANCE + 2.0;
-        boolean blocked = player.horizontalCollision;
 
-        if ((waypointAbove || blocked) && followJumpCooldownTicks <= 0) {
+        if (waypointAbove && followJumpCooldownTicks <= 0) {
             options.jumpKey.setPressed(true);
             state.setFollowJump(true);
             followJumpCooldownTicks = FOLLOW_JUMP_COOLDOWN_TICKS;

@@ -27,7 +27,6 @@ public class BotState {
     private int activeGotoStuckTicks;
     private GotoResult lastGotoResult;
     private String activeFollowTarget = "";
-    private String activeFollowMode = "ROUTE";
     private int activeFollowRouteIndex;
     private int activeFollowRouteLength;
     private String activeFollowRouteResult = "none";
@@ -182,10 +181,9 @@ public class BotState {
                 + " gotoDistance=" + String.format(java.util.Locale.ROOT, "%.1f", activeGotoDistance);
     }
 
-    public void setActiveFollowRoute(String targetPlayer, String followMode, int routeIndex, int routeLength,
-                                     String result, int replans, int stuckTicks) {
+    public void setActiveFollowRoute(String targetPlayer, int routeIndex, int routeLength, String result,
+                                     int replans, int stuckTicks) {
         activeFollowTarget = targetPlayer;
-        activeFollowMode = followMode;
         activeFollowRouteIndex = routeIndex;
         activeFollowRouteLength = routeLength;
         activeFollowRouteResult = result;
@@ -195,7 +193,6 @@ public class BotState {
 
     public void clearActiveFollowRoute() {
         activeFollowTarget = "";
-        activeFollowMode = "ROUTE";
         activeFollowRouteIndex = 0;
         activeFollowRouteLength = 0;
         activeFollowRouteResult = "none";
@@ -223,7 +220,6 @@ public class BotState {
 
         if (activeFollowTarget != null && !activeFollowTarget.isBlank()) {
             return "routeActive=true"
-                    + " followMode=" + activeFollowMode
                     + " routeIndex=" + activeFollowRouteIndex
                     + " routeLength=" + activeFollowRouteLength
                     + " routeResult=" + normalizeRouteResult(activeFollowRouteResult)
