@@ -88,6 +88,10 @@ public class ActionExecutor {
     private long lastMovementDiagnosticsLogMillis;
     private long lastFollowDiagnosticsLogMillis;
     private String lastFollowReplanReason = "none";
+    private int lastFollowCandidateCount;
+    private int lastFollowSuccessfulCandidates;
+    private String lastFollowSelectedCandidate = "none";
+    private boolean lastFollowEmptyRouteFallback;
 
     public ActionExecutor(BotState state) {
         this.state = state;
@@ -1317,18 +1321,30 @@ public class ActionExecutor {
         FollowGoal fallbackGoal = new FollowGoal(target, entityPosition(target), target.getBlockPos());
         PathPlanResult bestPlan = null;
         FollowGoal bestGoal = fallbackGoal;
+        List<BlockPos> candidates = followGoalCandidates(target);
+        int successfulCandidates = 0;
+        boolean failedBeforeSuccess = false;
+        boolean bestUsedFallback = false;
 
-        for (BlockPos candidate : followGoalCandidates(target)) {
+        for (BlockPos candidate : candidates) {
             PathPlanResult plan = pathPlanner.plan(client.world, player.getBlockPos(), candidate);
-            if (!plan.found()) {
+            if (!plan.found() || plan.path().isEmpty()) {
+                failedBeforeSuccess = true;
                 continue;
             }
 
+            successfulCandidates++;
             if (bestPlan == null || plan.length() < bestPlan.length()) {
                 bestPlan = plan;
                 bestGoal = new FollowGoal(target, entityPosition(target), candidate);
+                bestUsedFallback = failedBeforeSuccess;
             }
         }
+
+        lastFollowCandidateCount = candidates.size();
+        lastFollowSuccessfulCandidates = successfulCandidates;
+        lastFollowSelectedCandidate = bestPlan == null ? "none" : followGoalLabel(bestGoal.routeGoal());
+        lastFollowEmptyRouteFallback = bestPlan != null && bestUsedFallback;
 
         if (bestPlan == null) {
             return new FollowPlan(fallbackGoal, PathPlanResult.notFound("path_not_found"));
@@ -1342,6 +1358,20 @@ public class ActionExecutor {
         BlockPos targetBlock = target.getBlockPos();
         int radiusLimit = (int) Math.ceil(FOLLOW_DISTANCE);
 
+        addFollowGoalCandidatesAtY(candidates, targetBlock, radiusLimit, 0);
+
+        for (int deltaY = 1; deltaY <= FOLLOW_GOAL_VERTICAL_SEARCH; deltaY++) {
+            addFollowGoalCandidatesAtY(candidates, targetBlock, radiusLimit, deltaY);
+        }
+
+        for (int deltaY = -1; deltaY >= -FOLLOW_GOAL_VERTICAL_SEARCH; deltaY--) {
+            addFollowGoalCandidatesAtY(candidates, targetBlock, radiusLimit, deltaY);
+        }
+
+        return candidates;
+    }
+
+    private void addFollowGoalCandidatesAtY(List<BlockPos> candidates, BlockPos targetBlock, int radiusLimit, int deltaY) {
         for (int radius = 1; radius <= radiusLimit; radius++) {
             for (int deltaX = -radius; deltaX <= radius; deltaX++) {
                 for (int deltaZ = -radius; deltaZ <= radius; deltaZ++) {
@@ -1354,14 +1384,10 @@ public class ActionExecutor {
                         continue;
                     }
 
-                    for (int deltaY = -FOLLOW_GOAL_VERTICAL_SEARCH; deltaY <= FOLLOW_GOAL_VERTICAL_SEARCH; deltaY++) {
-                        candidates.add(targetBlock.add(deltaX, deltaY, deltaZ));
-                    }
+                    candidates.add(targetBlock.add(deltaX, deltaY, deltaZ));
                 }
             }
         }
-
-        return candidates;
     }
 
     private Vec3d entityPosition(AbstractClientPlayerEntity entity) {
@@ -1382,6 +1408,10 @@ public class ActionExecutor {
         followStuckTicks = 0;
         followStuckReplans = 0;
         lastFollowReplanReason = "none";
+        lastFollowCandidateCount = 0;
+        lastFollowSuccessfulCandidates = 0;
+        lastFollowSelectedCandidate = "none";
+        lastFollowEmptyRouteFallback = false;
     }
 
     private BlockPos predictedFollowTarget(AbstractClientPlayerEntity target) {
@@ -1846,14 +1876,18 @@ public class ActionExecutor {
         lastFollowDiagnosticsLogMillis = now;
         BambooBotLog.info(String.format(
                 Locale.ROOT,
-                "FOLLOW dist=%.1f keep=%.1f satisfied=%s goal=%s route=%d/%d replan=%s",
+                "FOLLOW dist=%.1f keep=%.1f satisfied=%s goal=%s route=%d/%d replan=%s candidateCount=%d successfulCandidates=%d selectedCandidate=%s emptyRouteFallback=%s",
                 player.distanceTo(target),
                 FOLLOW_DISTANCE,
                 followGoalSatisfied,
                 followGoalLabel(),
                 activeFollowRouteIndex,
                 activeFollowRoute.size(),
-                lastFollowReplanReason
+                lastFollowReplanReason,
+                lastFollowCandidateCount,
+                lastFollowSuccessfulCandidates,
+                lastFollowSelectedCandidate,
+                lastFollowEmptyRouteFallback
         ));
         lastFollowReplanReason = "none";
     }
@@ -1864,6 +1898,14 @@ public class ActionExecutor {
         }
 
         BlockPos goal = activeFollowGoal.routeGoal();
+        return followGoalLabel(goal);
+    }
+
+    private String followGoalLabel(BlockPos goal) {
+        if (goal == null) {
+            return "none";
+        }
+
         return goal.getX() + "," + goal.getY() + "," + goal.getZ();
     }
 
