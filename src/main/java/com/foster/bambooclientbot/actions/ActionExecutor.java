@@ -57,6 +57,8 @@ public class ActionExecutor {
     private static final int ROUTE_STUCK_TICKS = 60;
     private static final int ROUTE_MAX_STUCK_REPLANS = 3;
     private static final int FOLLOW_JUMP_COOLDOWN_TICKS = 8;
+    private static final int FOLLOW_EMPTY_ROUTE_RECOVERY_TICKS = 3;
+    private static final int FOLLOW_FORWARD_NUDGE_TICKS = 8;
     private static final long MOVEMENT_DIAGNOSTICS_LOG_INTERVAL_MILLIS = 1_000L;
     private static final long FOLLOW_DIAGNOSTICS_LOG_INTERVAL_MILLIS = 1_000L;
     private static final long AUTOSWING_INTERVAL_MILLIS = 1_000L;
@@ -84,9 +86,12 @@ public class ActionExecutor {
     private int gotoStuckTicks;
     private int gotoStuckReplans;
     private int followJumpCooldownTicks;
+    private int followEmptyRouteTicks;
+    private int followForwardNudgeTicks;
     private long lastMovementDiagnosticsLogMillis;
     private long lastFollowDiagnosticsLogMillis;
     private String lastFollowReplanReason = "none";
+    private String lastFollowRecovery = "none";
     private int lastFollowCandidateCount;
     private int lastFollowSuccessfulCandidates;
     private String lastFollowSelectedCandidate = "none";
@@ -1036,6 +1041,10 @@ public class ActionExecutor {
         tickFollowReplan(client, player, target);
 
         if (activeFollowRoute.isEmpty()) {
+            if (tickFollowEmptyRouteRecovery(client, player, target)) {
+                return;
+            }
+
             logFollowDiagnostics(player, target, false);
             clearDirectionalKeys(client.options);
             client.options.jumpKey.setPressed(false);
@@ -1283,6 +1292,50 @@ public class ActionExecutor {
         return "none";
     }
 
+    private boolean tickFollowEmptyRouteRecovery(MinecraftClient client, ClientPlayerEntity player,
+                                                 AbstractClientPlayerEntity target) {
+        if (followForwardNudgeTicks > 0) {
+            applyFollowForwardNudge(client, player, target);
+            followForwardNudgeTicks--;
+
+            if (followForwardNudgeTicks <= 0) {
+                lastFollowReplanReason = "forward_nudge_retry";
+                planFollowRoute(client, player, target);
+            }
+
+            return true;
+        }
+
+        if (lastFollowCandidateCount > 0 && lastFollowSuccessfulCandidates == 0) {
+            followEmptyRouteTicks++;
+        } else {
+            followEmptyRouteTicks = 0;
+        }
+
+        if (followEmptyRouteTicks < FOLLOW_EMPTY_ROUTE_RECOVERY_TICKS) {
+            return false;
+        }
+
+        followEmptyRouteTicks = 0;
+        followForwardNudgeTicks = FOLLOW_FORWARD_NUDGE_TICKS;
+        lastFollowRecovery = "forward_nudge";
+        lastFollowDiagnosticsLogMillis = 0L;
+        applyFollowForwardNudge(client, player, target);
+        followForwardNudgeTicks--;
+        return true;
+    }
+
+    private void applyFollowForwardNudge(MinecraftClient client, ClientPlayerEntity player,
+                                         AbstractClientPlayerEntity target) {
+        rotateToward(player, target.getEyePos());
+        clearDirectionalKeys(client.options);
+        client.options.forwardKey.setPressed(true);
+        client.options.jumpKey.setPressed(false);
+        client.options.sprintKey.setPressed(false);
+        state.setFollowJump(false);
+        logFollowDiagnostics(player, target, false);
+    }
+
     private void planFollowRoute(MinecraftClient client, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
         if (client.world == null || activeFollow == null) {
             lastFollowReplanReason = "movement_unavailable";
@@ -1305,6 +1358,9 @@ public class ActionExecutor {
         activeFollowRoute = followPlan.plan().path();
         activeFollowRouteIndex = activeFollowRoute.size() > 1 ? 1 : 0;
         activeFollowGoal = followPlan.goal();
+        followEmptyRouteTicks = 0;
+        followForwardNudgeTicks = 0;
+        lastFollowRecovery = "none";
         resetFollowStuckTracking();
         state.setActiveFollowRoute(
                 activeFollow.actionData(),
@@ -1406,7 +1462,10 @@ public class ActionExecutor {
         bestFollowWaypointDistance = Double.POSITIVE_INFINITY;
         followStuckTicks = 0;
         followStuckReplans = 0;
+        followEmptyRouteTicks = 0;
+        followForwardNudgeTicks = 0;
         lastFollowReplanReason = "none";
+        lastFollowRecovery = "none";
         lastFollowCandidateCount = 0;
         lastFollowSuccessfulCandidates = 0;
         lastFollowSelectedCandidate = "none";
@@ -1870,7 +1929,7 @@ public class ActionExecutor {
         lastFollowDiagnosticsLogMillis = now;
         BambooBotLog.info(String.format(
                 Locale.ROOT,
-                "FOLLOW dist=%.1f keep=%.1f satisfied=%s goal=%s route=%d/%d replan=%s candidateCount=%d successfulCandidates=%d selectedCandidate=%s emptyRouteFallback=%s",
+                "FOLLOW dist=%.1f keep=%.1f satisfied=%s goal=%s route=%d/%d replan=%s recovery=%s candidateCount=%d successfulCandidates=%d selectedCandidate=%s emptyRouteFallback=%s",
                 player.distanceTo(target),
                 FOLLOW_DISTANCE,
                 followGoalSatisfied,
@@ -1878,12 +1937,16 @@ public class ActionExecutor {
                 activeFollowRouteIndex,
                 activeFollowRoute.size(),
                 lastFollowReplanReason,
+                lastFollowRecovery,
                 lastFollowCandidateCount,
                 lastFollowSuccessfulCandidates,
                 lastFollowSelectedCandidate,
                 lastFollowEmptyRouteFallback
         ));
         lastFollowReplanReason = "none";
+        if (followForwardNudgeTicks <= 0) {
+            lastFollowRecovery = "none";
+        }
     }
 
     private String followGoalLabel() {
