@@ -1,12 +1,9 @@
 package com.foster.bambooclientbot.actions;
 
 import com.foster.bambooclientbot.navigation.NavigationGrid;
-import com.foster.bambooclientbot.navigation.PathPlanResult;
 import com.foster.bambooclientbot.navigation.PathPlanner;
 import com.foster.bambooclientbot.state.BotState;
 import com.foster.bambooclientbot.state.ContainerSnapshot;
-import com.foster.bambooclientbot.state.GotoResult;
-import com.foster.bambooclientbot.state.GotoTarget;
 import com.foster.bambooclientbot.state.LookedAtBlock;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
@@ -35,9 +32,6 @@ public class ActionExecutor {
     private static final boolean FOLLOW_DIRECT_CHASE_ENABLED = false;
     private static final double FOLLOW_DIRECT_CHASE_DISTANCE = 12.0;
     private static final int FOLLOW_PREDICTION_TICKS = 10;
-    private static final double GOTO_HORIZONTAL_ARRIVAL_DISTANCE = 1.5;
-    private static final double GOTO_VERTICAL_ARRIVAL_DISTANCE = 2.0;
-    private static final double GOTO_WAYPOINT_DISTANCE = 0.8;
     private static final double ROUTE_LOOK_HEIGHT = 1.5;
     private static final int ROUTE_STUCK_TICKS = 60;
     private static final int ROUTE_MAX_STUCK_REPLANS = 3;
@@ -51,21 +45,20 @@ public class ActionExecutor {
     private final RouteExecutor routeExecutor;
     private final MovementRecovery movementRecovery;
     private final InventoryActionExecutor inventoryActionExecutor;
+    private final GotoController gotoController;
     private ActionRequest timedMovement;
     private int timedMovementTicksRemaining;
     private ActionRequest activeApproach;
     private ActionRequest activeFollow;
-    private ActionRequest activeGoto;
     private int followStuckReplans;
-    private List<BlockPos> activeGotoRoute = List.of();
-    private int activeGotoRouteIndex;
-    private int gotoStuckReplans;
 
     public ActionExecutor(BotState state) {
         this.state = state;
         routeExecutor = new RouteExecutor(state);
         movementRecovery = new MovementRecovery(state, lookController);
         inventoryActionExecutor = new InventoryActionExecutor(state, lookController);
+        gotoController = new GotoController(state, pathPlanner, lookController, routeExecutor, movementRecovery,
+                movementDiagnostics);
     }
 
     public void tick(MinecraftClient client) {
@@ -81,7 +74,7 @@ public class ActionExecutor {
 
         tickApproach(client);
         tickFollow(client);
-        tickGoto(client);
+        gotoController.tick(client, () -> stop(client));
         tickTimedMovement(client);
         tickAutoSneak(client);
         tickAutoUse(client);
@@ -97,7 +90,7 @@ public class ActionExecutor {
                 activeApproach = null;
                 activeFollow = null;
                 clearActiveFollowRoute();
-                cancelActiveGoto("goto_cancelled");
+                gotoController.cancel("goto_cancelled");
                 timedMovement = null;
                 timedMovementTicksRemaining = 0;
                 routeExecutor.resetJumpCooldown();
@@ -472,54 +465,6 @@ public class ActionExecutor {
         );
     }
 
-    private void tickGoto(MinecraftClient client) {
-        if (activeGoto == null) {
-            return;
-        }
-
-        GotoTarget target = activeGoto.gotoTarget();
-
-        if (client == null || client.player == null || client.options == null || target == null || activeGotoRoute.isEmpty()) {
-            failGoto(client, "movement_unavailable");
-            return;
-        }
-
-        ClientPlayerEntity player = client.player;
-        double horizontalDistance = horizontalDistance(player, target);
-        double verticalDifference = Math.abs(player.getY() - target.y());
-        state.setActiveGoto(target, horizontalDistance, activeGotoRouteIndex, activeGotoRoute.size(), gotoStuckReplans,
-                movementRecovery.gotoStuckTicks());
-
-        if (horizontalDistance <= GOTO_HORIZONTAL_ARRIVAL_DISTANCE
-                && verticalDifference <= GOTO_VERTICAL_ARRIVAL_DISTANCE) {
-            stop(client);
-            activeGoto.setStatus(ActionRequest.ActionStatus.COMPLETE);
-            state.setLastGotoResult(new GotoResult(target, "success", ""));
-            state.clearActiveGoto();
-            activeGoto = null;
-            activeGotoRoute = List.of();
-            activeGotoRouteIndex = 0;
-            return;
-        }
-
-        int previousRouteIndex = activeGotoRouteIndex;
-        BlockPos waypoint = currentGotoWaypoint(player);
-        if (activeGotoRouteIndex != previousRouteIndex) {
-            resetGotoStuckTracking();
-        }
-
-        double waypointDistance = horizontalDistance(player, waypoint);
-        if (isGotoRouteStuck(client, player, target, waypointDistance)) {
-            return;
-        }
-
-        lookController.rotateToward(player, lookController.routeLookTarget(player, activeGotoRoute, activeGotoRouteIndex));
-        routeExecutor.tickJumpCooldown();
-        routeExecutor.executeGotoRoute(client.options, player, waypoint, horizontalDistance);
-        movementDiagnostics.logMovement("goto", client.options, player, waypoint, waypoint.getY() - player.getY(),
-                false, activeGotoRouteIndex, activeGotoRoute.size());
-    }
-
     private void tickTimedMovement(MinecraftClient client) {
         if (timedMovement == null) {
             return;
@@ -553,7 +498,7 @@ public class ActionExecutor {
         activeApproach = null;
         activeFollow = null;
         clearActiveFollowRoute();
-        cancelActiveGoto("goto_cancelled");
+        gotoController.cancel("goto_cancelled");
         routeExecutor.resetJumpCooldown();
         GameOptions options = client.options;
         clearDirectionalKeys(options);
@@ -601,7 +546,7 @@ public class ActionExecutor {
         timedMovementTicksRemaining = 0;
         activeFollow = null;
         clearActiveFollowRoute();
-        cancelActiveGoto("goto_cancelled");
+        gotoController.cancel("goto_cancelled");
         routeExecutor.resetJumpCooldown();
         clearDirectionalKeys(client.options);
         client.options.jumpKey.setPressed(false);
@@ -632,7 +577,7 @@ public class ActionExecutor {
         timedMovement = null;
         timedMovementTicksRemaining = 0;
         activeApproach = null;
-        cancelActiveGoto("goto_cancelled");
+        gotoController.cancel("goto_cancelled");
         clearActiveFollowRoute();
         routeExecutor.resetJumpCooldown();
         clearDirectionalKeys(client.options);
@@ -748,151 +693,13 @@ public class ActionExecutor {
     }
 
     private void startGoto(MinecraftClient client, ActionRequest request) {
-        GotoTarget target = request.gotoTarget();
-
-        if (client == null || client.player == null || client.world == null || client.options == null || target == null) {
-            request.setStatus(ActionRequest.ActionStatus.FAILED);
-            state.setLastGotoResult(new GotoResult(target, "failed", "movement_unavailable"));
-            state.clearActiveGoto();
-            gotoStuckReplans = 0;
-            resetGotoStuckTracking();
-            state.queueChatMessage("goto failed");
-            return;
-        }
-
-        cancelActiveGoto("goto_cancelled");
-        gotoStuckReplans = 0;
-        resetGotoStuckTracking();
-        BlockPos start = client.player.getBlockPos();
-        BlockPos targetPosition = BlockPos.ofFloored(target.x(), target.y(), target.z());
-        PathPlanResult plan = pathPlanner.plan(client.world, start, targetPosition);
-
-        if (!plan.found()) {
-            request.setStatus(ActionRequest.ActionStatus.FAILED);
-            state.setLastGotoResult(new GotoResult(target, "failed", plan.reason()));
-            state.clearActiveGoto();
-            state.queueChatMessage("goto failed");
-            return;
-        }
-
-        timedMovement = null;
-        timedMovementTicksRemaining = 0;
-        activeApproach = null;
-        activeFollow = null;
-        clearActiveFollowRoute();
-        routeExecutor.resetJumpCooldown();
-
-        double horizontalDistance = horizontalDistance(client.player, target);
-        double verticalDifference = Math.abs(client.player.getY() - target.y());
-
-        if (horizontalDistance <= GOTO_HORIZONTAL_ARRIVAL_DISTANCE
-                && verticalDifference <= GOTO_VERTICAL_ARRIVAL_DISTANCE) {
-            stop(client);
-            request.setStatus(ActionRequest.ActionStatus.COMPLETE);
-            state.setLastGotoResult(new GotoResult(target, "success", ""));
-            state.clearActiveGoto();
-            state.queueChatMessage("arrived");
-            return;
-        }
-
-        clearDirectionalKeys(client.options);
-        client.options.jumpKey.setPressed(false);
-        state.setFollowJump(false);
-        activeGotoRoute = plan.path();
-        activeGotoRouteIndex = activeGotoRoute.size() > 1 ? 1 : 0;
-        lookController.rotateToward(client.player, lookController.routeLookTarget(client.player, activeGotoRoute, activeGotoRouteIndex));
-        resetGotoStuckTracking();
-        state.setActiveGoto(target, horizontalDistance, activeGotoRouteIndex, activeGotoRoute.size(), gotoStuckReplans,
-                movementRecovery.gotoStuckTicks());
-        activeGoto = request;
-        state.queueChatMessage("going to " + target.formatForChat());
-    }
-
-    private boolean isGotoRouteStuck(MinecraftClient client, ClientPlayerEntity player, GotoTarget target,
-                                     double waypointDistance) {
-        if (state.followJump()) {
-            return false;
-        }
-
-        if (movementRecovery.recordRouteProgress(waypointDistance, false)) {
-            return false;
-        }
-
-        if (movementRecovery.gotoStuckTicks() < ROUTE_STUCK_TICKS) {
-            return false;
-        }
-
-        gotoStuckReplans++;
-
-        if (gotoStuckReplans > ROUTE_MAX_STUCK_REPLANS) {
-            failGoto(client, "stuck");
-            return true;
-        }
-
-        resetGotoStuckTracking();
-        replanGotoRoute(client, player, target);
-        return true;
-    }
-
-    private void replanGotoRoute(MinecraftClient client, ClientPlayerEntity player, GotoTarget target) {
-        if (client.world == null || activeGoto == null) {
-            failGoto(client, "movement_unavailable");
-            return;
-        }
-
-        BlockPos targetPosition = BlockPos.ofFloored(target.x(), target.y(), target.z());
-        PathPlanResult plan = pathPlanner.plan(client.world, player.getBlockPos(), targetPosition);
-
-        if (!plan.found()) {
-            return;
-        }
-
-        activeGotoRoute = plan.path();
-        activeGotoRouteIndex = activeGotoRoute.size() > 1 ? 1 : 0;
-        resetGotoStuckTracking();
-        state.setActiveGoto(
-                target,
-                horizontalDistance(player, target),
-                activeGotoRouteIndex,
-                activeGotoRoute.size(),
-                gotoStuckReplans,
-                movementRecovery.gotoStuckTicks()
-        );
-    }
-
-    private void failGoto(MinecraftClient client, String reason) {
-        GotoTarget target = activeGoto == null ? null : activeGoto.gotoTarget();
-
-        if (activeGoto != null) {
-            activeGoto.setStatus(ActionRequest.ActionStatus.FAILED);
-        }
-
-        stop(client);
-        if ("stuck".equals(reason)) {
-            state.setLastGotoResult(new GotoResult(target, "stuck", ""));
-        } else {
-            state.setLastGotoResult(new GotoResult(target, "failed", reason));
-        }
-        state.clearActiveGoto();
-        activeGoto = null;
-        activeGotoRoute = List.of();
-        activeGotoRouteIndex = 0;
-        resetGotoStuckTracking();
-    }
-
-    private void cancelActiveGoto(String reason) {
-        if (activeGoto == null) {
-            state.clearActiveGoto();
-            return;
-        }
-
-        activeGoto.setStatus(ActionRequest.ActionStatus.FAILED);
-        state.setLastGotoResult(new GotoResult(activeGoto.gotoTarget(), "failed", reason));
-        activeGoto = null;
-        activeGotoRoute = List.of();
-        activeGotoRouteIndex = 0;
-        resetGotoStuckTracking();
-        state.clearActiveGoto();
+        gotoController.start(client, request, () -> {
+            timedMovement = null;
+            timedMovementTicksRemaining = 0;
+            activeApproach = null;
+            activeFollow = null;
+            clearActiveFollowRoute();
+        }, () -> stop(client));
     }
 
     private void stop(MinecraftClient client) {
@@ -958,32 +765,8 @@ public class ActionExecutor {
         state.setLastSwingTimeMillis(now);
     }
 
-    private BlockPos currentGotoWaypoint(ClientPlayerEntity player) {
-        activeGotoRouteIndex = routeIndexFor(player, activeGotoRoute, activeGotoRouteIndex);
-        return activeGotoRoute.get(activeGotoRouteIndex);
-    }
-
-    private int routeIndexFor(ClientPlayerEntity player, List<BlockPos> route, int currentIndex) {
-        return routeIndexFor(player, route, currentIndex, GOTO_WAYPOINT_DISTANCE);
-    }
-
-    private int routeIndexFor(ClientPlayerEntity player, List<BlockPos> route, int currentIndex, double waypointDistance) {
-        int routeIndex = currentIndex;
-
-        while (routeIndex < route.size() - 1
-                && horizontalDistance(player, route.get(routeIndex)) <= waypointDistance) {
-            routeIndex++;
-        }
-
-        return routeIndex;
-    }
-
     private void resetFollowStuckTracking() {
         movementRecovery.resetFollowStuckTracking();
-    }
-
-    private void resetGotoStuckTracking() {
-        movementRecovery.resetGotoStuckTracking();
     }
 
     private void logFollowDiagnostics(ClientPlayerEntity player, AbstractClientPlayerEntity target,
@@ -998,12 +781,6 @@ public class ActionExecutor {
                 FOLLOW_DISTANCE,
                 movementRecovery.followRecoveryActive()
         );
-    }
-
-    private double horizontalDistance(ClientPlayerEntity player, GotoTarget target) {
-        double deltaX = target.x() - player.getX();
-        double deltaZ = target.z() - player.getZ();
-        return Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
     }
 
     private double horizontalDistance(ClientPlayerEntity player, BlockPos target) {
