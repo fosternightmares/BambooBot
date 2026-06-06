@@ -1,7 +1,6 @@
 package com.foster.bambooclientbot.actions;
 
 import com.foster.bambooclientbot.commands.ItemResolver;
-import com.foster.bambooclientbot.logging.BambooBotLog;
 import com.foster.bambooclientbot.navigation.NavigationGrid;
 import com.foster.bambooclientbot.navigation.PathPlanResult;
 import com.foster.bambooclientbot.navigation.PathPlanner;
@@ -40,27 +39,15 @@ public class ActionExecutor {
     private static final double APPROACH_TARGET_DISTANCE = 2.5;
     private static final double FOLLOW_DISTANCE = 3.0;
     private static final double FOLLOW_SPRINT_ENABLE_DISTANCE = 6.0;
-    private static final double FOLLOW_SPRINT_DISABLE_DISTANCE = 4.0;
-    private static final double FOLLOW_REPLAN_DISTANCE = 1.5;
     private static final boolean FOLLOW_DIRECT_CHASE_ENABLED = false;
     private static final double FOLLOW_DIRECT_CHASE_DISTANCE = 12.0;
-    private static final double FOLLOW_WAYPOINT_DISTANCE = 1.0;
-    private static final int FOLLOW_GOAL_VERTICAL_SEARCH = 1;
-    private static final int FOLLOW_REPLAN_TICKS = 10;
     private static final int FOLLOW_PREDICTION_TICKS = 10;
     private static final double GOTO_HORIZONTAL_ARRIVAL_DISTANCE = 1.5;
     private static final double GOTO_VERTICAL_ARRIVAL_DISTANCE = 2.0;
     private static final double GOTO_WAYPOINT_DISTANCE = 0.8;
-    private static final double GOTO_JUMP_TARGET_Y_DELTA = 0.5;
     private static final double ROUTE_LOOK_HEIGHT = 1.5;
-    private static final double ROUTE_PROGRESS_EPSILON = 0.15;
     private static final int ROUTE_STUCK_TICKS = 60;
     private static final int ROUTE_MAX_STUCK_REPLANS = 3;
-    private static final int FOLLOW_JUMP_COOLDOWN_TICKS = 8;
-    private static final int FOLLOW_EMPTY_ROUTE_RECOVERY_TICKS = 3;
-    private static final int FOLLOW_FORWARD_NUDGE_TICKS = 8;
-    private static final long MOVEMENT_DIAGNOSTICS_LOG_INTERVAL_MILLIS = 1_000L;
-    private static final long FOLLOW_DIAGNOSTICS_LOG_INTERVAL_MILLIS = 1_000L;
     private static final long AUTOSWING_INTERVAL_MILLIS = 1_000L;
     private static final int MAIN_INVENTORY_SLOT_COUNT = 36;
     private static final int TOTAL_INVENTORY_SLOT_COUNT = 41;
@@ -68,37 +55,25 @@ public class ActionExecutor {
 
     private final BotState state;
     private final PathPlanner pathPlanner = new PathPlanner(new NavigationGrid());
+    private final LookController lookController = new LookController();
+    private final MovementDiagnostics movementDiagnostics = new MovementDiagnostics();
+    private final FollowController followController = new FollowController(pathPlanner);
+    private final RouteExecutor routeExecutor;
+    private final MovementRecovery movementRecovery;
     private ActionRequest timedMovement;
     private int timedMovementTicksRemaining;
     private ActionRequest activeApproach;
     private ActionRequest activeFollow;
     private ActionRequest activeGoto;
-    private List<BlockPos> activeFollowRoute = List.of();
-    private int activeFollowRouteIndex;
-    private FollowGoal activeFollowGoal;
-    private int followReplanTicks;
-    private double bestFollowWaypointDistance = Double.POSITIVE_INFINITY;
-    private int followStuckTicks;
     private int followStuckReplans;
     private List<BlockPos> activeGotoRoute = List.of();
     private int activeGotoRouteIndex;
-    private double bestGotoWaypointDistance = Double.POSITIVE_INFINITY;
-    private int gotoStuckTicks;
     private int gotoStuckReplans;
-    private int followJumpCooldownTicks;
-    private int followEmptyRouteTicks;
-    private int followForwardNudgeTicks;
-    private long lastMovementDiagnosticsLogMillis;
-    private long lastFollowDiagnosticsLogMillis;
-    private String lastFollowReplanReason = "none";
-    private String lastFollowRecovery = "none";
-    private int lastFollowCandidateCount;
-    private int lastFollowSuccessfulCandidates;
-    private String lastFollowSelectedCandidate = "none";
-    private boolean lastFollowEmptyRouteFallback;
 
     public ActionExecutor(BotState state) {
         this.state = state;
+        routeExecutor = new RouteExecutor(state);
+        movementRecovery = new MovementRecovery(state, lookController);
     }
 
     public void tick(MinecraftClient client) {
@@ -133,7 +108,7 @@ public class ActionExecutor {
                 cancelActiveGoto("goto_cancelled");
                 timedMovement = null;
                 timedMovementTicksRemaining = 0;
-                followJumpCooldownTicks = 0;
+                routeExecutor.resetJumpCooldown();
                 state.setAutoSwing(false);
                 state.setLastSwingTimeMillis(0L);
                 state.setAutoUse(false);
@@ -521,7 +496,7 @@ public class ActionExecutor {
             return;
         }
 
-        rotateToward(player, target.getEyePos());
+        lookController.rotateToward(player, target.getEyePos());
         int toDrop = Math.min(request.requestedCount(), available);
         int droppedCount = dropExactCount(client, handler, dropSlots, itemId, toDrop);
 
@@ -973,7 +948,7 @@ public class ActionExecutor {
             return;
         }
 
-        rotateToward(player, target.getEyePos());
+        lookController.rotateToward(player, target.getEyePos());
         client.options.forwardKey.setPressed(true);
     }
 
@@ -985,7 +960,7 @@ public class ActionExecutor {
         if (client == null || client.player == null || client.world == null || client.options == null) {
             String targetName = activeFollow.actionData();
             int replans = followStuckReplans;
-            int stuckTicks = followStuckTicks;
+            int stuckTicks = movementRecovery.followStuckTicks();
             activeFollow.setStatus(ActionRequest.ActionStatus.FAILED);
             activeFollow = null;
             clearActiveFollowRouteLocal();
@@ -1001,7 +976,7 @@ public class ActionExecutor {
         if (target == null) {
             String targetName = activeFollow.actionData();
             int replans = followStuckReplans;
-            int stuckTicks = followStuckTicks;
+            int stuckTicks = movementRecovery.followStuckTicks();
             activeFollow.setStatus(ActionRequest.ActionStatus.FAILED);
             activeFollow = null;
             clearActiveFollowRouteLocal();
@@ -1022,7 +997,7 @@ public class ActionExecutor {
             return;
         }
 
-        tickFollowJumpCooldown();
+        routeExecutor.tickJumpCooldown();
 
         if (FOLLOW_DIRECT_CHASE_ENABLED && canDirectChase(player, target)) {
             clearActiveFollowRouteLocal();
@@ -1033,15 +1008,32 @@ public class ActionExecutor {
                     0,
                     "success",
                     followStuckReplans,
-                    followStuckTicks
+                    movementRecovery.followStuckTicks()
             );
             return;
         }
 
-        tickFollowReplan(client, player, target);
+        followController.tickReplan(client, player, target, state, activeFollow.actionData(), followStuckReplans,
+                movementRecovery.followStuckTicks(), movementDiagnostics);
+        if (followController.consumePlannedSuccessfully()) {
+            movementRecovery.resetFollowRecovery();
+            movementDiagnostics.setFollowRecovery("none");
+            resetFollowStuckTracking();
+        }
 
-        if (activeFollowRoute.isEmpty()) {
-            if (tickFollowEmptyRouteRecovery(client, player, target)) {
+        if (followController.isRouteEmpty()) {
+            if (movementRecovery.tickFollowEmptyRouteRecovery(
+                    client,
+                    player,
+                    target,
+                    movementDiagnostics,
+                    () -> followController.planRoute(client, player, target, state, activeFollow.actionData(),
+                            followStuckReplans, movementRecovery.followStuckTicks(), movementDiagnostics),
+                    followController.goalLabel(),
+                    followController.routeIndex(),
+                    followController.routeLength(),
+                    FOLLOW_DISTANCE
+            )) {
                 return;
             }
 
@@ -1053,36 +1045,31 @@ public class ActionExecutor {
             return;
         }
 
-        int previousRouteIndex = activeFollowRouteIndex;
-        activeFollowRouteIndex = routeIndexFor(player, activeFollowRoute, activeFollowRouteIndex, FOLLOW_WAYPOINT_DISTANCE);
-        if (activeFollowRouteIndex != previousRouteIndex) {
+        if (followController.advanceRouteIndex(player)) {
             resetFollowStuckTracking();
         }
 
-        BlockPos waypoint = activeFollowRoute.get(activeFollowRouteIndex);
+        BlockPos waypoint = followController.waypoint();
         double waypointDistance = horizontalDistance(player, waypoint);
         if (isFollowRouteStuck(client, player, target, waypointDistance)) {
             return;
         }
 
-        rotateToward(player, followRouteLookTarget(activeFollowRoute, activeFollowRouteIndex));
-        clearDirectionalKeys(client.options);
-        client.options.forwardKey.setPressed(true);
-        boolean jumpWanted = followRouteJumpWanted(player, waypoint);
-        updateFollowRouteJump(client.options, player, jumpWanted);
-        updateFollowSprint(client.options, player.distanceTo(target));
-        logMovementDiagnostics("follow_route", client.options, player, waypoint, waypoint.getY() - player.getY(),
+        lookController.rotateToward(player, lookController.followRouteLookTarget(followController.route(),
+                followController.routeIndex()));
+        boolean jumpWanted = routeExecutor.executeFollowRoute(client.options, player, waypoint, player.distanceTo(target));
+        movementDiagnostics.logMovement("follow_route", client.options, player, waypoint, waypoint.getY() - player.getY(),
                 jumpWanted,
-                activeFollowRouteIndex,
-                activeFollowRoute.size());
+                followController.routeIndex(),
+                followController.routeLength());
         logFollowDiagnostics(player, target, false);
         state.setActiveFollowRoute(
                 activeFollow.actionData(),
-                activeFollowRouteIndex,
-                activeFollowRoute.size(),
+                followController.routeIndex(),
+                followController.routeLength(),
                 "success",
                 followStuckReplans,
-                followStuckTicks
+                movementRecovery.followStuckTicks()
         );
     }
 
@@ -1101,7 +1088,8 @@ public class ActionExecutor {
         ClientPlayerEntity player = client.player;
         double horizontalDistance = horizontalDistance(player, target);
         double verticalDifference = Math.abs(player.getY() - target.y());
-        state.setActiveGoto(target, horizontalDistance, activeGotoRouteIndex, activeGotoRoute.size(), gotoStuckReplans, gotoStuckTicks);
+        state.setActiveGoto(target, horizontalDistance, activeGotoRouteIndex, activeGotoRoute.size(), gotoStuckReplans,
+                movementRecovery.gotoStuckTicks());
 
         if (horizontalDistance <= GOTO_HORIZONTAL_ARRIVAL_DISTANCE
                 && verticalDifference <= GOTO_VERTICAL_ARRIVAL_DISTANCE) {
@@ -1126,13 +1114,10 @@ public class ActionExecutor {
             return;
         }
 
-        rotateToward(player, routeLookTarget(player, activeGotoRoute, activeGotoRouteIndex));
-        tickFollowJumpCooldown();
-        clearDirectionalKeys(client.options);
-        client.options.forwardKey.setPressed(true);
-        updateGotoJump(client.options, player, waypoint);
-        updateFollowSprint(client.options, horizontalDistance);
-        logMovementDiagnostics("goto", client.options, player, waypoint, waypoint.getY() - player.getY(),
+        lookController.rotateToward(player, lookController.routeLookTarget(player, activeGotoRoute, activeGotoRouteIndex));
+        routeExecutor.tickJumpCooldown();
+        routeExecutor.executeGotoRoute(client.options, player, waypoint, horizontalDistance);
+        movementDiagnostics.logMovement("goto", client.options, player, waypoint, waypoint.getY() - player.getY(),
                 false, activeGotoRouteIndex, activeGotoRoute.size());
     }
 
@@ -1170,7 +1155,7 @@ public class ActionExecutor {
         activeFollow = null;
         clearActiveFollowRoute();
         cancelActiveGoto("goto_cancelled");
-        followJumpCooldownTicks = 0;
+        routeExecutor.resetJumpCooldown();
         GameOptions options = client.options;
         clearDirectionalKeys(options);
         options.jumpKey.setPressed(false);
@@ -1218,12 +1203,12 @@ public class ActionExecutor {
         activeFollow = null;
         clearActiveFollowRoute();
         cancelActiveGoto("goto_cancelled");
-        followJumpCooldownTicks = 0;
+        routeExecutor.resetJumpCooldown();
         clearDirectionalKeys(client.options);
         client.options.jumpKey.setPressed(false);
         state.setFollowJump(false);
         client.options.sprintKey.setPressed(false);
-        rotateToward(player, target.getEyePos());
+        lookController.rotateToward(player, target.getEyePos());
         client.options.forwardKey.setPressed(true);
         activeApproach = request;
         state.queueChatMessage("approaching " + request.actionData());
@@ -1250,226 +1235,37 @@ public class ActionExecutor {
         activeApproach = null;
         cancelActiveGoto("goto_cancelled");
         clearActiveFollowRoute();
-        followJumpCooldownTicks = 0;
+        routeExecutor.resetJumpCooldown();
         clearDirectionalKeys(client.options);
         client.options.sprintKey.setPressed(false);
         client.options.jumpKey.setPressed(false);
         state.setFollowJump(false);
         activeFollow = request;
-        followReplanTicks = 0;
-        lastFollowReplanReason = "start";
-        planFollowRoute(client, player, target);
+        followController.start(client, player, target, state, activeFollow.actionData(), followStuckReplans,
+                movementRecovery.followStuckTicks(), movementDiagnostics);
+        if (followController.consumePlannedSuccessfully()) {
+            movementRecovery.resetFollowRecovery();
+            movementDiagnostics.setFollowRecovery("none");
+            resetFollowStuckTracking();
+        }
         state.queueChatMessage("following " + request.actionData());
     }
 
-    private void tickFollowReplan(MinecraftClient client, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
-        if (followReplanTicks > 0) {
-            followReplanTicks--;
-        }
-
-        boolean targetMoved = activeFollowGoal == null
-                || activeFollowGoal.targetMovedMoreThan(target, FOLLOW_REPLAN_DISTANCE);
-
-        if (activeFollowRoute.isEmpty() || targetMoved || followReplanTicks <= 0) {
-            lastFollowReplanReason = followReplanReason(activeFollowRoute.isEmpty(), targetMoved, followReplanTicks <= 0);
-            planFollowRoute(client, player, target);
-        }
-    }
-
-    private String followReplanReason(boolean routeEmpty, boolean targetMoved, boolean timerElapsed) {
-        if (routeEmpty) {
-            return "empty_route";
-        }
-
-        if (targetMoved) {
-            return "target_moved";
-        }
-
-        if (timerElapsed) {
-            return "timer";
-        }
-
-        return "none";
-    }
-
-    private boolean tickFollowEmptyRouteRecovery(MinecraftClient client, ClientPlayerEntity player,
-                                                 AbstractClientPlayerEntity target) {
-        if (followForwardNudgeTicks > 0) {
-            applyFollowForwardNudge(client, player, target);
-            followForwardNudgeTicks--;
-
-            if (followForwardNudgeTicks <= 0) {
-                lastFollowReplanReason = "forward_nudge_retry";
-                planFollowRoute(client, player, target);
-            }
-
-            return true;
-        }
-
-        if (lastFollowCandidateCount > 0 && lastFollowSuccessfulCandidates == 0) {
-            followEmptyRouteTicks++;
-        } else {
-            followEmptyRouteTicks = 0;
-        }
-
-        if (followEmptyRouteTicks < FOLLOW_EMPTY_ROUTE_RECOVERY_TICKS) {
-            return false;
-        }
-
-        followEmptyRouteTicks = 0;
-        followForwardNudgeTicks = FOLLOW_FORWARD_NUDGE_TICKS;
-        lastFollowRecovery = "forward_nudge";
-        lastFollowDiagnosticsLogMillis = 0L;
-        applyFollowForwardNudge(client, player, target);
-        followForwardNudgeTicks--;
-        return true;
-    }
-
-    private void applyFollowForwardNudge(MinecraftClient client, ClientPlayerEntity player,
-                                         AbstractClientPlayerEntity target) {
-        rotateToward(player, target.getEyePos());
-        clearDirectionalKeys(client.options);
-        client.options.forwardKey.setPressed(true);
-        client.options.jumpKey.setPressed(false);
-        client.options.sprintKey.setPressed(false);
-        state.setFollowJump(false);
-        logFollowDiagnostics(player, target, false);
-    }
-
-    private void planFollowRoute(MinecraftClient client, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
-        if (client.world == null || activeFollow == null) {
-            lastFollowReplanReason = "movement_unavailable";
-            clearActiveFollowRoute();
-            return;
-        }
-
-        FollowPlan followPlan = planFollowGoal(client, player, target);
-        followReplanTicks = FOLLOW_REPLAN_TICKS;
-
-        if (!followPlan.plan().found()) {
-            activeFollowRoute = List.of();
-            activeFollowRouteIndex = 0;
-            activeFollowGoal = followPlan.goal();
-            state.setActiveFollowRoute(activeFollow.actionData(), 0, 0, followPlan.plan().reason(),
-                    followStuckReplans, followStuckTicks);
-            return;
-        }
-
-        activeFollowRoute = followPlan.plan().path();
-        activeFollowRouteIndex = activeFollowRoute.size() > 1 ? 1 : 0;
-        activeFollowGoal = followPlan.goal();
-        followEmptyRouteTicks = 0;
-        followForwardNudgeTicks = 0;
-        lastFollowRecovery = "none";
-        resetFollowStuckTracking();
-        state.setActiveFollowRoute(
-                activeFollow.actionData(),
-                activeFollowRouteIndex,
-                activeFollowRoute.size(),
-                "success",
-                followStuckReplans,
-                followStuckTicks
-        );
-    }
-
-    private FollowPlan planFollowGoal(MinecraftClient client, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
-        FollowGoal fallbackGoal = new FollowGoal(target, entityPosition(target), target.getBlockPos());
-        PathPlanResult bestPlan = null;
-        FollowGoal bestGoal = fallbackGoal;
-        List<BlockPos> candidates = followGoalCandidates(target);
-        int successfulCandidates = 0;
-        boolean failedBeforeSuccess = false;
-        boolean bestUsedFallback = false;
-
-        for (BlockPos candidate : candidates) {
-            PathPlanResult plan = pathPlanner.plan(client.world, player.getBlockPos(), candidate);
-            if (!plan.found() || plan.path().isEmpty()) {
-                failedBeforeSuccess = true;
-                continue;
-            }
-
-            successfulCandidates++;
-            if (bestPlan == null || plan.length() < bestPlan.length()) {
-                bestPlan = plan;
-                bestGoal = new FollowGoal(target, entityPosition(target), candidate);
-                bestUsedFallback = failedBeforeSuccess;
-            }
-        }
-
-        lastFollowCandidateCount = candidates.size();
-        lastFollowSuccessfulCandidates = successfulCandidates;
-        lastFollowSelectedCandidate = bestPlan == null ? "none" : followGoalLabel(bestGoal.routeGoal());
-        lastFollowEmptyRouteFallback = bestPlan != null && bestUsedFallback;
-
-        if (bestPlan == null) {
-            return new FollowPlan(fallbackGoal, PathPlanResult.notFound("path_not_found"));
-        }
-
-        return new FollowPlan(bestGoal, bestPlan);
-    }
-
-    private List<BlockPos> followGoalCandidates(AbstractClientPlayerEntity target) {
-        List<BlockPos> candidates = new ArrayList<>();
-        BlockPos targetBlock = target.getBlockPos();
-        int radiusLimit = (int) Math.ceil(FOLLOW_DISTANCE);
-
-        addFollowGoalCandidatesAtY(candidates, targetBlock, radiusLimit, 0);
-
-        for (int deltaY = 1; deltaY <= FOLLOW_GOAL_VERTICAL_SEARCH; deltaY++) {
-            addFollowGoalCandidatesAtY(candidates, targetBlock, radiusLimit, deltaY);
-        }
-
-        for (int deltaY = -1; deltaY >= -FOLLOW_GOAL_VERTICAL_SEARCH; deltaY--) {
-            addFollowGoalCandidatesAtY(candidates, targetBlock, radiusLimit, deltaY);
-        }
-
-        return candidates;
-    }
-
-    private void addFollowGoalCandidatesAtY(List<BlockPos> candidates, BlockPos targetBlock, int radiusLimit, int deltaY) {
-        for (int radius = 1; radius <= radiusLimit; radius++) {
-            for (int deltaX = -radius; deltaX <= radius; deltaX++) {
-                for (int deltaZ = -radius; deltaZ <= radius; deltaZ++) {
-                    if (Math.max(Math.abs(deltaX), Math.abs(deltaZ)) != radius) {
-                        continue;
-                    }
-
-                    double horizontalDistance = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
-                    if (horizontalDistance > FOLLOW_DISTANCE) {
-                        continue;
-                    }
-
-                    candidates.add(targetBlock.add(deltaX, deltaY, deltaZ));
-                }
-            }
-        }
-    }
-
-    private Vec3d entityPosition(AbstractClientPlayerEntity entity) {
-        return new Vec3d(entity.getX(), entity.getY(), entity.getZ());
-    }
-
     private void clearActiveFollowRoute() {
-        clearActiveFollowRouteLocal();
-        state.clearActiveFollowRoute();
+        followController.clear(state);
+        resetFollowState();
     }
 
     private void clearActiveFollowRouteLocal() {
-        activeFollowRoute = List.of();
-        activeFollowRouteIndex = 0;
-        activeFollowGoal = null;
-        followReplanTicks = 0;
-        bestFollowWaypointDistance = Double.POSITIVE_INFINITY;
-        followStuckTicks = 0;
+        followController.clearLocal();
+        resetFollowState();
+    }
+
+    private void resetFollowState() {
+        movementRecovery.resetFollowStuckTracking();
         followStuckReplans = 0;
-        followEmptyRouteTicks = 0;
-        followForwardNudgeTicks = 0;
-        lastFollowReplanReason = "none";
-        lastFollowRecovery = "none";
-        lastFollowCandidateCount = 0;
-        lastFollowSuccessfulCandidates = 0;
-        lastFollowSelectedCandidate = "none";
-        lastFollowEmptyRouteFallback = false;
+        movementRecovery.resetFollowRecovery();
+        movementDiagnostics.clearFollowState();
     }
 
     private BlockPos predictedFollowTarget(AbstractClientPlayerEntity target) {
@@ -1489,27 +1285,24 @@ public class ActionExecutor {
         BlockPos waypoint = BlockPos.ofFloored(predicted.x, target.getY(), predicted.z);
         Vec3d lookTarget = new Vec3d(predicted.x, Math.max(player.getEyeY() - 0.2, target.getY() + ROUTE_LOOK_HEIGHT), predicted.z);
 
-        rotateToward(player, lookTarget);
+        lookController.rotateToward(player, lookTarget);
         clearDirectionalKeys(options);
         options.forwardKey.setPressed(true);
-        updateFollowSprint(options, player.distanceTo(target));
+        routeExecutor.updateSprint(options, player.distanceTo(target));
         updateFollowDirectJump(options, player, target);
-        logMovementDiagnostics("follow_direct", options, player, waypoint, target.getY() - player.getY(), false, 0, 0);
+        movementDiagnostics.logMovement("follow_direct", options, player, waypoint, target.getY() - player.getY(), false, 0, 0);
     }
 
     private void updateFollowDirectJump(GameOptions options, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
         boolean flatGroundChase = Math.abs(target.getY() - player.getY()) < 0.5;
 
-        if (!canFollowJump(player) || !flatGroundChase || player.distanceTo(target) <= FOLLOW_SPRINT_ENABLE_DISTANCE) {
+        if (!routeExecutor.canJump(player) || !flatGroundChase || player.distanceTo(target) <= FOLLOW_SPRINT_ENABLE_DISTANCE) {
             options.jumpKey.setPressed(false);
             state.setFollowJump(false);
             return;
         }
 
-        if (followJumpCooldownTicks <= 0) {
-            options.jumpKey.setPressed(true);
-            state.setFollowJump(true);
-            followJumpCooldownTicks = FOLLOW_JUMP_COOLDOWN_TICKS;
+        if (routeExecutor.pressJumpIfReady(options)) {
             return;
         }
 
@@ -1523,11 +1316,11 @@ public class ActionExecutor {
             return false;
         }
 
-        if (recordRouteProgress(waypointDistance, true)) {
+        if (movementRecovery.recordRouteProgress(waypointDistance, true)) {
             return false;
         }
 
-        if (followStuckTicks < ROUTE_STUCK_TICKS) {
+        if (movementRecovery.followStuckTicks() < ROUTE_STUCK_TICKS) {
             return false;
         }
 
@@ -1545,7 +1338,13 @@ public class ActionExecutor {
         }
 
         resetFollowStuckTracking();
-        planFollowRoute(client, player, target);
+        followController.planRoute(client, player, target, state, activeFollow.actionData(), followStuckReplans,
+                movementRecovery.followStuckTicks(), movementDiagnostics);
+        if (followController.consumePlannedSuccessfully()) {
+            movementRecovery.resetFollowRecovery();
+            movementDiagnostics.setFollowRecovery("none");
+            resetFollowStuckTracking();
+        }
         return true;
     }
 
@@ -1582,7 +1381,7 @@ public class ActionExecutor {
         activeApproach = null;
         activeFollow = null;
         clearActiveFollowRoute();
-        followJumpCooldownTicks = 0;
+        routeExecutor.resetJumpCooldown();
 
         double horizontalDistance = horizontalDistance(client.player, target);
         double verticalDifference = Math.abs(client.player.getY() - target.y());
@@ -1602,9 +1401,10 @@ public class ActionExecutor {
         state.setFollowJump(false);
         activeGotoRoute = plan.path();
         activeGotoRouteIndex = activeGotoRoute.size() > 1 ? 1 : 0;
-        rotateToward(client.player, routeLookTarget(client.player, activeGotoRoute, activeGotoRouteIndex));
+        lookController.rotateToward(client.player, lookController.routeLookTarget(client.player, activeGotoRoute, activeGotoRouteIndex));
         resetGotoStuckTracking();
-        state.setActiveGoto(target, horizontalDistance, activeGotoRouteIndex, activeGotoRoute.size(), gotoStuckReplans, gotoStuckTicks);
+        state.setActiveGoto(target, horizontalDistance, activeGotoRouteIndex, activeGotoRoute.size(), gotoStuckReplans,
+                movementRecovery.gotoStuckTicks());
         activeGoto = request;
         state.queueChatMessage("going to " + target.formatForChat());
     }
@@ -1615,11 +1415,11 @@ public class ActionExecutor {
             return false;
         }
 
-        if (recordRouteProgress(waypointDistance, false)) {
+        if (movementRecovery.recordRouteProgress(waypointDistance, false)) {
             return false;
         }
 
-        if (gotoStuckTicks < ROUTE_STUCK_TICKS) {
+        if (movementRecovery.gotoStuckTicks() < ROUTE_STUCK_TICKS) {
             return false;
         }
 
@@ -1657,7 +1457,7 @@ public class ActionExecutor {
                 activeGotoRouteIndex,
                 activeGotoRoute.size(),
                 gotoStuckReplans,
-                gotoStuckTicks
+                movementRecovery.gotoStuckTicks()
         );
     }
 
@@ -1704,7 +1504,7 @@ public class ActionExecutor {
         GameOptions options = client.options;
         clearDirectionalKeys(options);
         options.jumpKey.setPressed(false);
-        followJumpCooldownTicks = 0;
+        routeExecutor.resetJumpCooldown();
         state.setFollowJump(false);
         options.sneakKey.setPressed(false);
         options.sprintKey.setPressed(false);
@@ -1759,20 +1559,6 @@ public class ActionExecutor {
         state.setLastSwingTimeMillis(now);
     }
 
-    private void updateFollowSprint(GameOptions options, double targetDistance) {
-        if (targetDistance > FOLLOW_SPRINT_ENABLE_DISTANCE) {
-            options.sprintKey.setPressed(true);
-        } else if (targetDistance <= FOLLOW_SPRINT_DISABLE_DISTANCE) {
-            options.sprintKey.setPressed(false);
-        }
-    }
-
-    private void tickFollowJumpCooldown() {
-        if (followJumpCooldownTicks > 0) {
-            followJumpCooldownTicks--;
-        }
-    }
-
     private BlockPos currentGotoWaypoint(ClientPlayerEntity player) {
         activeGotoRouteIndex = routeIndexFor(player, activeGotoRoute, activeGotoRouteIndex);
         return activeGotoRoute.get(activeGotoRouteIndex);
@@ -1793,177 +1579,26 @@ public class ActionExecutor {
         return routeIndex;
     }
 
-    private boolean recordRouteProgress(double waypointDistance, boolean followRoute) {
-        if (followRoute) {
-            if (waypointDistance + ROUTE_PROGRESS_EPSILON < bestFollowWaypointDistance) {
-                bestFollowWaypointDistance = waypointDistance;
-                followStuckTicks = 0;
-                return true;
-            }
-
-            followStuckTicks++;
-            return false;
-        }
-
-        if (waypointDistance + ROUTE_PROGRESS_EPSILON < bestGotoWaypointDistance) {
-            bestGotoWaypointDistance = waypointDistance;
-            gotoStuckTicks = 0;
-            return true;
-        }
-
-        gotoStuckTicks++;
-        return false;
-    }
-
     private void resetFollowStuckTracking() {
-        bestFollowWaypointDistance = Double.POSITIVE_INFINITY;
-        followStuckTicks = 0;
+        movementRecovery.resetFollowStuckTracking();
     }
 
     private void resetGotoStuckTracking() {
-        bestGotoWaypointDistance = Double.POSITIVE_INFINITY;
-        gotoStuckTicks = 0;
-    }
-
-    private Vec3d waypointCenter(BlockPos waypoint) {
-        return new Vec3d(waypoint.getX() + 0.5, waypoint.getY(), waypoint.getZ() + 0.5);
-    }
-
-    private Vec3d routeLookTarget(ClientPlayerEntity player, List<BlockPos> route, int routeIndex) {
-        BlockPos waypoint = route.get(routeIndex);
-        Vec3d current = waypointCenter(waypoint);
-        Vec3d lookPoint = current;
-
-        if (routeIndex + 1 < route.size()) {
-            Vec3d next = waypointCenter(route.get(routeIndex + 1));
-            lookPoint = current.add(next).multiply(0.5);
-        }
-
-        double lookY = Math.max(player.getEyeY() - 0.2, waypoint.getY() + ROUTE_LOOK_HEIGHT);
-        return new Vec3d(lookPoint.x, lookY, lookPoint.z);
-    }
-
-    private Vec3d followRouteLookTarget(List<BlockPos> route, int routeIndex) {
-        return waypointCenter(route.get(routeIndex));
-    }
-
-    private void updateGotoJump(GameOptions options, ClientPlayerEntity player, BlockPos waypoint) {
-        if (!canFollowJump(player)) {
-            options.jumpKey.setPressed(false);
-            state.setFollowJump(false);
-            return;
-        }
-
-        boolean targetAbove = waypoint.getY() - player.getY() >= GOTO_JUMP_TARGET_Y_DELTA
-                && horizontalDistance(player, waypoint) <= FOLLOW_DISTANCE + 2.0;
-        boolean blocked = player.horizontalCollision;
-
-        if ((targetAbove || blocked) && followJumpCooldownTicks <= 0) {
-            options.jumpKey.setPressed(true);
-            state.setFollowJump(true);
-            followJumpCooldownTicks = FOLLOW_JUMP_COOLDOWN_TICKS;
-            return;
-        }
-
-        options.jumpKey.setPressed(false);
-        state.setFollowJump(false);
-    }
-
-    private void updateFollowRouteJump(GameOptions options, ClientPlayerEntity player, boolean jumpWanted) {
-        if (!canFollowJump(player)) {
-            options.jumpKey.setPressed(false);
-            state.setFollowJump(false);
-            return;
-        }
-
-        if (jumpWanted && followJumpCooldownTicks <= 0) {
-            options.jumpKey.setPressed(true);
-            state.setFollowJump(true);
-            followJumpCooldownTicks = FOLLOW_JUMP_COOLDOWN_TICKS;
-            return;
-        }
-
-        options.jumpKey.setPressed(false);
-        state.setFollowJump(false);
-    }
-
-    private boolean followRouteJumpWanted(ClientPlayerEntity player, BlockPos waypoint) {
-        return waypoint.getY() - player.getY() > GOTO_JUMP_TARGET_Y_DELTA || player.horizontalCollision;
-    }
-
-    private void logMovementDiagnostics(String movementMode, GameOptions options, ClientPlayerEntity player,
-                                        BlockPos waypoint, double targetDy, boolean jumpWanted,
-                                        int routeIndex, int routeLength) {
-        long now = System.currentTimeMillis();
-        if (now - lastMovementDiagnosticsLogMillis < MOVEMENT_DIAGNOSTICS_LOG_INTERVAL_MILLIS) {
-            return;
-        }
-
-        lastMovementDiagnosticsLogMillis = now;
-        double waypointDy = waypoint.getY() - player.getY();
-        BambooBotLog.info(String.format(
-                Locale.ROOT,
-                "MOVE m=%s dy=%.1f targetDy=%.1f waypointDy=%.1f pdy=%.1f col=%s ground=%s jumpWanted=%s jump=%s sprint=%s route=%d/%d",
-                movementMode,
-                targetDy,
-                targetDy,
-                waypointDy,
-                waypointDy,
-                player.horizontalCollision,
-                player.isOnGround(),
-                jumpWanted,
-                options.jumpKey.isPressed(),
-                options.sprintKey.isPressed(),
-                routeIndex,
-                routeLength
-        ));
+        movementRecovery.resetGotoStuckTracking();
     }
 
     private void logFollowDiagnostics(ClientPlayerEntity player, AbstractClientPlayerEntity target,
                                       boolean followGoalSatisfied) {
-        long now = System.currentTimeMillis();
-        if (now - lastFollowDiagnosticsLogMillis < FOLLOW_DIAGNOSTICS_LOG_INTERVAL_MILLIS) {
-            return;
-        }
-
-        lastFollowDiagnosticsLogMillis = now;
-        BambooBotLog.info(String.format(
-                Locale.ROOT,
-                "FOLLOW dist=%.1f keep=%.1f satisfied=%s goal=%s route=%d/%d replan=%s recovery=%s candidateCount=%d successfulCandidates=%d selectedCandidate=%s emptyRouteFallback=%s",
-                player.distanceTo(target),
-                FOLLOW_DISTANCE,
+        movementDiagnostics.logFollow(
+                player,
+                target,
                 followGoalSatisfied,
-                followGoalLabel(),
-                activeFollowRouteIndex,
-                activeFollowRoute.size(),
-                lastFollowReplanReason,
-                lastFollowRecovery,
-                lastFollowCandidateCount,
-                lastFollowSuccessfulCandidates,
-                lastFollowSelectedCandidate,
-                lastFollowEmptyRouteFallback
-        ));
-        lastFollowReplanReason = "none";
-        if (followForwardNudgeTicks <= 0) {
-            lastFollowRecovery = "none";
-        }
-    }
-
-    private String followGoalLabel() {
-        if (activeFollowGoal == null || activeFollowGoal.routeGoal() == null) {
-            return "none";
-        }
-
-        BlockPos goal = activeFollowGoal.routeGoal();
-        return followGoalLabel(goal);
-    }
-
-    private String followGoalLabel(BlockPos goal) {
-        if (goal == null) {
-            return "none";
-        }
-
-        return goal.getX() + "," + goal.getY() + "," + goal.getZ();
+                followController.goalLabel(),
+                followController.routeIndex(),
+                followController.routeLength(),
+                FOLLOW_DISTANCE,
+                movementRecovery.followRecoveryActive()
+        );
     }
 
     private double horizontalDistance(ClientPlayerEntity player, GotoTarget target) {
@@ -1978,30 +1613,11 @@ public class ActionExecutor {
         return Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
     }
 
-    private boolean canFollowJump(ClientPlayerEntity player) {
-        return player.isOnGround()
-                && !player.isTouchingWater()
-                && !player.isSwimming()
-                && !player.isClimbing();
-    }
-
     private void clearDirectionalKeys(GameOptions options) {
         options.forwardKey.setPressed(false);
         options.backKey.setPressed(false);
         options.leftKey.setPressed(false);
         options.rightKey.setPressed(false);
-    }
-
-    private record FollowGoal(AbstractClientPlayerEntity target, Vec3d targetPosition, BlockPos routeGoal) {
-        private boolean targetMovedMoreThan(AbstractClientPlayerEntity currentTarget, double distance) {
-            return currentTarget == null
-                    || currentTarget != target
-                    || new Vec3d(currentTarget.getX(), currentTarget.getY(), currentTarget.getZ()).squaredDistanceTo(targetPosition)
-                    > distance * distance;
-        }
-    }
-
-    private record FollowPlan(FollowGoal goal, PathPlanResult plan) {
     }
 
     private KeyBinding movementKey(GameOptions options, ActionRequest.ActionType actionType) {
@@ -2026,7 +1642,7 @@ public class ActionExecutor {
             return false;
         }
 
-        rotateToward(player, target.getEyePos());
+        lookController.rotateToward(player, target.getEyePos());
         return true;
     }
 
@@ -2048,18 +1664,4 @@ public class ActionExecutor {
         return null;
     }
 
-    private void rotateToward(ClientPlayerEntity player, Vec3d targetPosition) {
-        Vec3d eyePosition = player.getEyePos();
-        double deltaX = targetPosition.x - eyePosition.x;
-        double deltaY = targetPosition.y - eyePosition.y;
-        double deltaZ = targetPosition.z - eyePosition.z;
-        double horizontalDistance = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
-        float yaw = (float) (Math.toDegrees(Math.atan2(deltaZ, deltaX)) - 90.0);
-        float pitch = (float) -Math.toDegrees(Math.atan2(deltaY, horizontalDistance));
-
-        player.setYaw(yaw);
-        player.setPitch(pitch);
-        player.setHeadYaw(yaw);
-        player.setBodyYaw(yaw);
-    }
 }
