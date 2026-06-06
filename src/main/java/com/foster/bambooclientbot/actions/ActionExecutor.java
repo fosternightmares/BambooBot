@@ -1050,7 +1050,8 @@ public class ActionExecutor {
         client.options.forwardKey.setPressed(true);
         updateFollowRouteJump(client.options, player, waypoint);
         updateFollowSprint(client.options, player.distanceTo(target));
-        logMovementDiagnostics("follow_route", client.options, player, waypoint, activeFollowRouteIndex,
+        logMovementDiagnostics("follow_route", client.options, player, waypoint, waypoint.getY() - player.getY(),
+                activeFollowRouteIndex,
                 activeFollowRoute.size());
         state.setActiveFollowRoute(
                 activeFollow.actionData(),
@@ -1108,7 +1109,8 @@ public class ActionExecutor {
         client.options.forwardKey.setPressed(true);
         updateGotoJump(client.options, player, waypoint);
         updateFollowSprint(client.options, horizontalDistance);
-        logMovementDiagnostics("goto", client.options, player, waypoint, activeGotoRouteIndex, activeGotoRoute.size());
+        logMovementDiagnostics("goto", client.options, player, waypoint, waypoint.getY() - player.getY(),
+                activeGotoRouteIndex, activeGotoRoute.size());
     }
 
     private void tickTimedMovement(MinecraftClient client) {
@@ -1319,7 +1321,7 @@ public class ActionExecutor {
         options.forwardKey.setPressed(true);
         updateFollowSprint(options, player.distanceTo(target));
         updateFollowDirectJump(options, player, target);
-        logMovementDiagnostics("follow_direct", options, player, waypoint, 0, 0);
+        logMovementDiagnostics("follow_direct", options, player, waypoint, target.getY() - player.getY(), 0, 0);
     }
 
     private void updateFollowDirectJump(GameOptions options, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
@@ -1721,18 +1723,22 @@ public class ActionExecutor {
     }
 
     private void logMovementDiagnostics(String movementMode, GameOptions options, ClientPlayerEntity player,
-                                        BlockPos waypoint, int routeIndex, int routeLength) {
+                                        BlockPos waypoint, double targetDy, int routeIndex, int routeLength) {
         long now = System.currentTimeMillis();
         if (now - lastMovementDiagnosticsLogMillis < MOVEMENT_DIAGNOSTICS_LOG_INTERVAL_MILLIS) {
             return;
         }
 
         lastMovementDiagnosticsLogMillis = now;
+        double waypointDy = waypoint.getY() - player.getY();
         BambooBotLog.info(String.format(
                 Locale.ROOT,
-                "MOVE m=%s dy=%.1f col=%s ground=%s jump=%s sprint=%s route=%d/%d",
+                "MOVE m=%s dy=%.1f targetDy=%.1f waypointDy=%.1f pdy=%.1f col=%s ground=%s jump=%s sprint=%s route=%d/%d",
                 movementMode,
-                waypoint.getY() - player.getY(),
+                targetDy,
+                targetDy,
+                waypointDy,
+                waypointDy,
                 player.horizontalCollision,
                 player.isOnGround(),
                 options.jumpKey.isPressed(),
