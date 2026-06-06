@@ -42,6 +42,7 @@ public class ActionExecutor {
     private static final double FOLLOW_SPRINT_ENABLE_DISTANCE = 6.0;
     private static final double FOLLOW_SPRINT_DISABLE_DISTANCE = 4.0;
     private static final double FOLLOW_REPLAN_DISTANCE = 1.5;
+    private static final boolean FOLLOW_DIRECT_CHASE_ENABLED = false;
     private static final double FOLLOW_DIRECT_CHASE_DISTANCE = 12.0;
     private static final double FOLLOW_WAYPOINT_DISTANCE = 1.0;
     private static final int FOLLOW_GOAL_VERTICAL_SEARCH = 1;
@@ -1010,7 +1011,7 @@ public class ActionExecutor {
 
         tickFollowJumpCooldown();
 
-        if (canDirectChase(player, target)) {
+        if (FOLLOW_DIRECT_CHASE_ENABLED && canDirectChase(player, target)) {
             clearActiveFollowRouteLocal();
             chaseFollowTarget(client.options, player, target);
             state.setActiveFollowRoute(
