@@ -48,7 +48,6 @@ public class ActionExecutor {
     private static final int FOLLOW_GOAL_VERTICAL_SEARCH = 1;
     private static final int FOLLOW_REPLAN_TICKS = 10;
     private static final int FOLLOW_PREDICTION_TICKS = 10;
-    private static final int FOLLOW_ROUTE_LOOKAHEAD_STEPS = 2;
     private static final double GOTO_HORIZONTAL_ARRIVAL_DISTANCE = 1.5;
     private static final double GOTO_VERTICAL_ARRIVAL_DISTANCE = 2.0;
     private static final double GOTO_WAYPOINT_DISTANCE = 0.8;
@@ -1057,7 +1056,7 @@ public class ActionExecutor {
             return;
         }
 
-        rotateToward(player, followRouteLookTarget(player, activeFollowRoute, activeFollowRouteIndex));
+        rotateToward(player, followRouteLookTarget(activeFollowRoute, activeFollowRouteIndex));
         clearDirectionalKeys(client.options);
         client.options.forwardKey.setPressed(true);
         boolean jumpWanted = followRouteJumpWanted(player, waypoint);
@@ -1785,13 +1784,8 @@ public class ActionExecutor {
         return new Vec3d(lookPoint.x, lookY, lookPoint.z);
     }
 
-    private Vec3d followRouteLookTarget(ClientPlayerEntity player, List<BlockPos> route, int routeIndex) {
-        int lookaheadIndex = Math.min(route.size() - 1, routeIndex + FOLLOW_ROUTE_LOOKAHEAD_STEPS);
-        Vec3d current = waypointCenter(route.get(routeIndex));
-        Vec3d lookahead = waypointCenter(route.get(lookaheadIndex));
-        Vec3d lookPoint = current.multiply(0.35).add(lookahead.multiply(0.65));
-        double lookY = Math.max(player.getEyeY() - 0.2, route.get(routeIndex).getY() + ROUTE_LOOK_HEIGHT);
-        return new Vec3d(lookPoint.x, lookY, lookPoint.z);
+    private Vec3d followRouteLookTarget(List<BlockPos> route, int routeIndex) {
+        return waypointCenter(route.get(routeIndex));
     }
 
     private void updateGotoJump(GameOptions options, ClientPlayerEntity player, BlockPos waypoint) {
