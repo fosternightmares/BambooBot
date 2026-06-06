@@ -59,6 +59,7 @@ public class ActionExecutor {
     private static final int ROUTE_MAX_STUCK_REPLANS = 3;
     private static final int FOLLOW_JUMP_COOLDOWN_TICKS = 8;
     private static final long MOVEMENT_DIAGNOSTICS_LOG_INTERVAL_MILLIS = 1_000L;
+    private static final long FOLLOW_DIAGNOSTICS_LOG_INTERVAL_MILLIS = 1_000L;
     private static final long AUTOSWING_INTERVAL_MILLIS = 1_000L;
     private static final int MAIN_INVENTORY_SLOT_COUNT = 36;
     private static final int TOTAL_INVENTORY_SLOT_COUNT = 41;
@@ -85,6 +86,8 @@ public class ActionExecutor {
     private int gotoStuckReplans;
     private int followJumpCooldownTicks;
     private long lastMovementDiagnosticsLogMillis;
+    private long lastFollowDiagnosticsLogMillis;
+    private String lastFollowReplanReason = "none";
 
     public ActionExecutor(BotState state) {
         this.state = state;
@@ -1000,7 +1003,9 @@ public class ActionExecutor {
             return;
         }
 
-        if (player.distanceTo(target) <= FOLLOW_DISTANCE) {
+        double followDistanceToTarget = player.distanceTo(target);
+        if (followDistanceToTarget <= FOLLOW_DISTANCE) {
+            logFollowDiagnostics(player, target, true);
             clearDirectionalKeys(client.options);
             client.options.jumpKey.setPressed(false);
             client.options.sprintKey.setPressed(false);
@@ -1028,6 +1033,7 @@ public class ActionExecutor {
         tickFollowReplan(client, player, target);
 
         if (activeFollowRoute.isEmpty()) {
+            logFollowDiagnostics(player, target, false);
             clearDirectionalKeys(client.options);
             client.options.jumpKey.setPressed(false);
             client.options.sprintKey.setPressed(false);
@@ -1057,6 +1063,7 @@ public class ActionExecutor {
                 jumpWanted,
                 activeFollowRouteIndex,
                 activeFollowRoute.size());
+        logFollowDiagnostics(player, target, false);
         state.setActiveFollowRoute(
                 activeFollow.actionData(),
                 activeFollowRouteIndex,
@@ -1238,6 +1245,7 @@ public class ActionExecutor {
         state.setFollowJump(false);
         activeFollow = request;
         followReplanTicks = 0;
+        lastFollowReplanReason = "start";
         planFollowRoute(client, player, target);
         state.queueChatMessage("following " + request.actionData());
     }
@@ -1251,12 +1259,30 @@ public class ActionExecutor {
                 || activeFollowGoal.targetMovedMoreThan(target, FOLLOW_REPLAN_DISTANCE);
 
         if (activeFollowRoute.isEmpty() || targetMoved || followReplanTicks <= 0) {
+            lastFollowReplanReason = followReplanReason(activeFollowRoute.isEmpty(), targetMoved, followReplanTicks <= 0);
             planFollowRoute(client, player, target);
         }
     }
 
+    private String followReplanReason(boolean routeEmpty, boolean targetMoved, boolean timerElapsed) {
+        if (routeEmpty) {
+            return "empty_route";
+        }
+
+        if (targetMoved) {
+            return "target_moved";
+        }
+
+        if (timerElapsed) {
+            return "timer";
+        }
+
+        return "none";
+    }
+
     private void planFollowRoute(MinecraftClient client, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
         if (client.world == null || activeFollow == null) {
+            lastFollowReplanReason = "movement_unavailable";
             clearActiveFollowRoute();
             return;
         }
@@ -1355,6 +1381,7 @@ public class ActionExecutor {
         bestFollowWaypointDistance = Double.POSITIVE_INFINITY;
         followStuckTicks = 0;
         followStuckReplans = 0;
+        lastFollowReplanReason = "none";
     }
 
     private BlockPos predictedFollowTarget(AbstractClientPlayerEntity target) {
@@ -1807,6 +1834,37 @@ public class ActionExecutor {
                 routeIndex,
                 routeLength
         ));
+    }
+
+    private void logFollowDiagnostics(ClientPlayerEntity player, AbstractClientPlayerEntity target,
+                                      boolean followGoalSatisfied) {
+        long now = System.currentTimeMillis();
+        if (now - lastFollowDiagnosticsLogMillis < FOLLOW_DIAGNOSTICS_LOG_INTERVAL_MILLIS) {
+            return;
+        }
+
+        lastFollowDiagnosticsLogMillis = now;
+        BambooBotLog.info(String.format(
+                Locale.ROOT,
+                "FOLLOW dist=%.1f keep=%.1f satisfied=%s goal=%s route=%d/%d replan=%s",
+                player.distanceTo(target),
+                FOLLOW_DISTANCE,
+                followGoalSatisfied,
+                followGoalLabel(),
+                activeFollowRouteIndex,
+                activeFollowRoute.size(),
+                lastFollowReplanReason
+        ));
+        lastFollowReplanReason = "none";
+    }
+
+    private String followGoalLabel() {
+        if (activeFollowGoal == null || activeFollowGoal.routeGoal() == null) {
+            return "none";
+        }
+
+        BlockPos goal = activeFollowGoal.routeGoal();
+        return goal.getX() + "," + goal.getY() + "," + goal.getZ();
     }
 
     private double horizontalDistance(ClientPlayerEntity player, GotoTarget target) {
