@@ -1313,7 +1313,7 @@ public class ActionExecutor {
 
     private void chaseFollowTarget(GameOptions options, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
         Vec3d predicted = new Vec3d(target.getX(), target.getY(), target.getZ()).add(target.getVelocity().multiply(FOLLOW_PREDICTION_TICKS));
-        BlockPos waypoint = BlockPos.ofFloored(predicted.x, predicted.y, predicted.z);
+        BlockPos waypoint = BlockPos.ofFloored(predicted.x, target.getY(), predicted.z);
         Vec3d lookTarget = new Vec3d(predicted.x, Math.max(player.getEyeY() - 0.2, target.getY() + ROUTE_LOOK_HEIGHT), predicted.z);
 
         rotateToward(player, lookTarget);
