@@ -1728,7 +1728,7 @@ public class ActionExecutor {
         lastMovementDiagnosticsLogMillis = now;
         BambooBotLog.info(String.format(
                 Locale.ROOT,
-                "MOVE m=%s dy=%.2f col=%s ground=%s jump=%s sprint=%s route=%d/%d",
+                "MOVE m=%s dy=%.1f col=%s ground=%s jump=%s sprint=%s route=%d/%d",
                 movementMode,
                 waypoint.getY() - player.getY(),
                 player.horizontalCollision,
