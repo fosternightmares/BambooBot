@@ -7,7 +7,6 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.option.GameOptions;
-import net.minecraft.client.option.KeyBinding;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
@@ -15,7 +14,6 @@ import java.util.List;
 
 public class ActionExecutor {
     private static final double LOOK_AT_RANGE = 32.0;
-    private static final double APPROACH_TARGET_DISTANCE = 2.5;
     private static final double FOLLOW_DISTANCE = 3.0;
     private static final double FOLLOW_SPRINT_ENABLE_DISTANCE = 6.0;
     private static final boolean FOLLOW_DIRECT_CHASE_ENABLED = false;
@@ -33,12 +31,10 @@ public class ActionExecutor {
     private final FollowController followController = new FollowController(pathPlanner);
     private final RouteExecutor routeExecutor;
     private final MovementRecovery movementRecovery;
+    private final SimpleMovementController simpleMovementController;
     private final InventoryActionExecutor inventoryActionExecutor;
     private final ContainerActionExecutor containerActionExecutor;
     private final GotoController gotoController;
-    private ActionRequest timedMovement;
-    private int timedMovementTicksRemaining;
-    private ActionRequest activeApproach;
     private ActionRequest activeFollow;
     private int followStuckReplans;
 
@@ -46,6 +42,7 @@ public class ActionExecutor {
         this.state = state;
         routeExecutor = new RouteExecutor(state);
         movementRecovery = new MovementRecovery(state, lookController);
+        simpleMovementController = new SimpleMovementController(state, lookController, routeExecutor);
         inventoryActionExecutor = new InventoryActionExecutor(state, lookController);
         containerActionExecutor = new ContainerActionExecutor(state, inventoryActionExecutor);
         gotoController = new GotoController(state, pathPlanner, lookController, routeExecutor, movementRecovery,
@@ -63,10 +60,10 @@ public class ActionExecutor {
             return;
         }
 
-        tickApproach(client);
+        simpleMovementController.tickApproach(client, this::stop, (player, targetName) -> findTargetPlayer(client, player, targetName));
         tickFollow(client);
         gotoController.tick(client, () -> stop(client));
-        tickTimedMovement(client);
+        simpleMovementController.tickTimedMovement(client, this::stop);
         tickAutoSneak(client);
         tickAutoUse(client);
         tickAutoSwing(client);
@@ -78,12 +75,10 @@ public class ActionExecutor {
 
         try {
             if (request.actionType() == ActionRequest.ActionType.STOP) {
-                activeApproach = null;
+                simpleMovementController.cancelActiveMovement();
                 activeFollow = null;
                 clearActiveFollowRoute();
                 gotoController.cancel("goto_cancelled");
-                timedMovement = null;
-                timedMovementTicksRemaining = 0;
                 routeExecutor.resetJumpCooldown();
                 state.setAutoSwing(false);
                 state.setLastSwingTimeMillis(0L);
@@ -203,42 +198,6 @@ public class ActionExecutor {
         state.queueChatMessage("farm actions disabled");
     }
 
-    private void tickApproach(MinecraftClient client) {
-        if (activeApproach == null) {
-            return;
-        }
-
-        if (client == null || client.player == null || client.world == null || client.options == null) {
-            activeApproach.setStatus(ActionRequest.ActionStatus.FAILED);
-            activeApproach = null;
-            stop(client);
-            state.queueChatMessage("action failed");
-            return;
-        }
-
-        ClientPlayerEntity player = client.player;
-        AbstractClientPlayerEntity target = findTargetPlayer(client, player, activeApproach.actionData());
-
-        if (target == null) {
-            activeApproach.setStatus(ActionRequest.ActionStatus.FAILED);
-            activeApproach = null;
-            stop(client);
-            state.queueChatMessage("player not found");
-            return;
-        }
-
-        if (player.distanceTo(target) <= APPROACH_TARGET_DISTANCE) {
-            stop(client);
-            activeApproach.setStatus(ActionRequest.ActionStatus.COMPLETE);
-            state.queueChatMessage("arrived near " + activeApproach.actionData());
-            activeApproach = null;
-            return;
-        }
-
-        lookController.rotateToward(player, target.getEyePos());
-        client.options.forwardKey.setPressed(true);
-    }
-
     private void tickFollow(MinecraftClient client) {
         if (activeFollow == null) {
             return;
@@ -276,7 +235,7 @@ public class ActionExecutor {
         double followDistanceToTarget = player.distanceTo(target);
         if (followDistanceToTarget <= FOLLOW_DISTANCE) {
             logFollowDiagnostics(player, target, true);
-            clearDirectionalKeys(client.options);
+            simpleMovementController.clearDirectionalKeys(client.options);
             client.options.jumpKey.setPressed(false);
             client.options.sprintKey.setPressed(false);
             state.setFollowJump(false);
@@ -325,7 +284,7 @@ public class ActionExecutor {
             }
 
             logFollowDiagnostics(player, target, false);
-            clearDirectionalKeys(client.options);
+            simpleMovementController.clearDirectionalKeys(client.options);
             client.options.jumpKey.setPressed(false);
             client.options.sprintKey.setPressed(false);
             state.setFollowJump(false);
@@ -360,97 +319,22 @@ public class ActionExecutor {
         );
     }
 
-    private void tickTimedMovement(MinecraftClient client) {
-        if (timedMovement == null) {
-            return;
-        }
-
-        if (client == null || client.player == null || client.options == null) {
-            timedMovement.setStatus(ActionRequest.ActionStatus.FAILED);
-            timedMovement = null;
-            timedMovementTicksRemaining = 0;
-            state.queueChatMessage("action failed");
-            return;
-        }
-
-        timedMovementTicksRemaining--;
-
-        if (timedMovementTicksRemaining <= 0) {
-            stop(client);
-            timedMovement.setStatus(ActionRequest.ActionStatus.COMPLETE);
-            timedMovement = null;
-            state.queueChatMessage("movement complete");
-        }
-    }
-
     private void move(MinecraftClient client, ActionRequest request, String direction) {
-        if (client == null || client.player == null || client.options == null) {
-            request.setStatus(ActionRequest.ActionStatus.FAILED);
-            state.queueChatMessage("action failed");
-            return;
-        }
-
-        activeApproach = null;
-        activeFollow = null;
-        clearActiveFollowRoute();
-        gotoController.cancel("goto_cancelled");
-        routeExecutor.resetJumpCooldown();
-        GameOptions options = client.options;
-        clearDirectionalKeys(options);
-        options.jumpKey.setPressed(false);
-        state.setFollowJump(false);
-        options.sprintKey.setPressed(false);
-        movementKey(options, request.actionType()).setPressed(true);
-
-        if (request.durationTicks() > 0) {
-            timedMovement = request;
-            timedMovementTicksRemaining = request.durationTicks();
-            state.queueChatMessage("moving " + direction + " for " + request.durationSeconds() + "s");
-        } else {
-            timedMovement = null;
-            timedMovementTicksRemaining = 0;
-            request.setStatus(ActionRequest.ActionStatus.COMPLETE);
-            state.queueChatMessage("moving " + direction);
-        }
+        simpleMovementController.move(client, request, direction, () -> {
+            activeFollow = null;
+            clearActiveFollowRoute();
+            gotoController.cancel("goto_cancelled");
+        });
     }
 
     private void startApproach(MinecraftClient client, ActionRequest request) {
-        if (client == null || client.player == null || client.world == null || client.options == null) {
-            request.setStatus(ActionRequest.ActionStatus.FAILED);
-            state.queueChatMessage("action failed");
-            return;
-        }
-
-        ClientPlayerEntity player = client.player;
-        AbstractClientPlayerEntity target = findTargetPlayer(client, player, request.actionData());
-
-        if (target == null) {
-            request.setStatus(ActionRequest.ActionStatus.FAILED);
-            state.queueChatMessage("player not found");
-            return;
-        }
-
-        if (player.distanceTo(target) <= APPROACH_TARGET_DISTANCE) {
-            stop(client);
-            request.setStatus(ActionRequest.ActionStatus.COMPLETE);
-            state.queueChatMessage("arrived near " + request.actionData());
-            return;
-        }
-
-        timedMovement = null;
-        timedMovementTicksRemaining = 0;
-        activeFollow = null;
-        clearActiveFollowRoute();
-        gotoController.cancel("goto_cancelled");
-        routeExecutor.resetJumpCooldown();
-        clearDirectionalKeys(client.options);
-        client.options.jumpKey.setPressed(false);
-        state.setFollowJump(false);
-        client.options.sprintKey.setPressed(false);
-        lookController.rotateToward(player, target.getEyePos());
-        client.options.forwardKey.setPressed(true);
-        activeApproach = request;
-        state.queueChatMessage("approaching " + request.actionData());
+        simpleMovementController.startApproach(client, request, this::stop,
+                (player, targetName) -> findTargetPlayer(client, player, targetName),
+                () -> {
+                    activeFollow = null;
+                    clearActiveFollowRoute();
+                    gotoController.cancel("goto_cancelled");
+                });
     }
 
     private void startFollow(MinecraftClient client, ActionRequest request) {
@@ -469,13 +353,11 @@ public class ActionExecutor {
             return;
         }
 
-        timedMovement = null;
-        timedMovementTicksRemaining = 0;
-        activeApproach = null;
+        simpleMovementController.cancelActiveMovement();
         gotoController.cancel("goto_cancelled");
         clearActiveFollowRoute();
         routeExecutor.resetJumpCooldown();
-        clearDirectionalKeys(client.options);
+        simpleMovementController.clearDirectionalKeys(client.options);
         client.options.sprintKey.setPressed(false);
         client.options.jumpKey.setPressed(false);
         state.setFollowJump(false);
@@ -525,7 +407,7 @@ public class ActionExecutor {
         Vec3d lookTarget = new Vec3d(predicted.x, Math.max(player.getEyeY() - 0.2, target.getY() + ROUTE_LOOK_HEIGHT), predicted.z);
 
         lookController.rotateToward(player, lookTarget);
-        clearDirectionalKeys(options);
+        simpleMovementController.clearDirectionalKeys(options);
         options.forwardKey.setPressed(true);
         routeExecutor.updateSprint(options, player.distanceTo(target));
         updateFollowDirectJump(options, player, target);
@@ -589,9 +471,7 @@ public class ActionExecutor {
 
     private void startGoto(MinecraftClient client, ActionRequest request) {
         gotoController.start(client, request, () -> {
-            timedMovement = null;
-            timedMovementTicksRemaining = 0;
-            activeApproach = null;
+            simpleMovementController.cancelActiveMovement();
             activeFollow = null;
             clearActiveFollowRoute();
         }, () -> stop(client));
@@ -603,7 +483,7 @@ public class ActionExecutor {
         }
 
         GameOptions options = client.options;
-        clearDirectionalKeys(options);
+        simpleMovementController.clearDirectionalKeys(options);
         options.jumpKey.setPressed(false);
         routeExecutor.resetJumpCooldown();
         state.setFollowJump(false);
@@ -682,23 +562,6 @@ public class ActionExecutor {
         double deltaX = target.getX() + 0.5 - player.getX();
         double deltaZ = target.getZ() + 0.5 - player.getZ();
         return Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
-    }
-
-    private void clearDirectionalKeys(GameOptions options) {
-        options.forwardKey.setPressed(false);
-        options.backKey.setPressed(false);
-        options.leftKey.setPressed(false);
-        options.rightKey.setPressed(false);
-    }
-
-    private KeyBinding movementKey(GameOptions options, ActionRequest.ActionType actionType) {
-        return switch (actionType) {
-            case FORWARD -> options.forwardKey;
-            case BACK -> options.backKey;
-            case LEFT -> options.leftKey;
-            case RIGHT -> options.rightKey;
-            default -> throw new IllegalArgumentException("Not a movement action: " + actionType);
-        };
     }
 
     private boolean lookAtPlayer(MinecraftClient client, String targetPlayerName) {
