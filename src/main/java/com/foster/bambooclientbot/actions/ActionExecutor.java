@@ -1,7 +1,7 @@
 package com.foster.bambooclientbot.actions;
 
-import com.foster.bambooclientbot.BambooClientBot;
 import com.foster.bambooclientbot.commands.ItemResolver;
+import com.foster.bambooclientbot.logging.BambooBotLog;
 import com.foster.bambooclientbot.navigation.NavigationGrid;
 import com.foster.bambooclientbot.navigation.PathPlanResult;
 import com.foster.bambooclientbot.navigation.PathPlanner;
@@ -1726,17 +1726,18 @@ public class ActionExecutor {
         }
 
         lastMovementDiagnosticsLogMillis = now;
-        BambooClientBot.LOGGER.info(
-                "[BambooBot] movement movementMode={} waypointDeltaY={} horizontalCollision={} onGround={} jumpPressed={} sprintPressed={} routeIndex={}/{}",
+        BambooBotLog.info(String.format(
+                Locale.ROOT,
+                "MOVE m=%s dy=%.2f col=%s ground=%s jump=%s sprint=%s route=%d/%d",
                 movementMode,
-                String.format(Locale.ROOT, "%.2f", waypoint.getY() - player.getY()),
+                waypoint.getY() - player.getY(),
                 player.horizontalCollision,
                 player.isOnGround(),
                 options.jumpKey.isPressed(),
                 options.sprintKey.isPressed(),
                 routeIndex,
                 routeLength
-        );
+        ));
     }
 
     private double horizontalDistance(ClientPlayerEntity player, GotoTarget target) {
