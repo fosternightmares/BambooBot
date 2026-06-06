@@ -1049,9 +1049,11 @@ public class ActionExecutor {
         rotateToward(player, followRouteLookTarget(player, activeFollowRoute, activeFollowRouteIndex));
         clearDirectionalKeys(client.options);
         client.options.forwardKey.setPressed(true);
-        updateFollowRouteJump(client.options, player, waypoint);
+        boolean jumpWanted = followRouteJumpWanted(player, waypoint);
+        updateFollowRouteJump(client.options, player, jumpWanted);
         updateFollowSprint(client.options, player.distanceTo(target));
         logMovementDiagnostics("follow_route", client.options, player, waypoint, waypoint.getY() - player.getY(),
+                jumpWanted,
                 activeFollowRouteIndex,
                 activeFollowRoute.size());
         state.setActiveFollowRoute(
@@ -1111,7 +1113,7 @@ public class ActionExecutor {
         updateGotoJump(client.options, player, waypoint);
         updateFollowSprint(client.options, horizontalDistance);
         logMovementDiagnostics("goto", client.options, player, waypoint, waypoint.getY() - player.getY(),
-                activeGotoRouteIndex, activeGotoRoute.size());
+                false, activeGotoRouteIndex, activeGotoRoute.size());
     }
 
     private void tickTimedMovement(MinecraftClient client) {
@@ -1376,7 +1378,7 @@ public class ActionExecutor {
         options.forwardKey.setPressed(true);
         updateFollowSprint(options, player.distanceTo(target));
         updateFollowDirectJump(options, player, target);
-        logMovementDiagnostics("follow_direct", options, player, waypoint, target.getY() - player.getY(), 0, 0);
+        logMovementDiagnostics("follow_direct", options, player, waypoint, target.getY() - player.getY(), false, 0, 0);
     }
 
     private void updateFollowDirectJump(GameOptions options, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
@@ -1756,17 +1758,14 @@ public class ActionExecutor {
         state.setFollowJump(false);
     }
 
-    private void updateFollowRouteJump(GameOptions options, ClientPlayerEntity player, BlockPos waypoint) {
+    private void updateFollowRouteJump(GameOptions options, ClientPlayerEntity player, boolean jumpWanted) {
         if (!canFollowJump(player)) {
             options.jumpKey.setPressed(false);
             state.setFollowJump(false);
             return;
         }
 
-        boolean waypointAbove = waypoint.getY() - player.getY() >= GOTO_JUMP_TARGET_Y_DELTA
-                && horizontalDistance(player, waypoint) <= FOLLOW_DISTANCE + 2.0;
-
-        if (waypointAbove && followJumpCooldownTicks <= 0) {
+        if (jumpWanted && followJumpCooldownTicks <= 0) {
             options.jumpKey.setPressed(true);
             state.setFollowJump(true);
             followJumpCooldownTicks = FOLLOW_JUMP_COOLDOWN_TICKS;
@@ -1777,8 +1776,13 @@ public class ActionExecutor {
         state.setFollowJump(false);
     }
 
+    private boolean followRouteJumpWanted(ClientPlayerEntity player, BlockPos waypoint) {
+        return waypoint.getY() - player.getY() > GOTO_JUMP_TARGET_Y_DELTA || player.horizontalCollision;
+    }
+
     private void logMovementDiagnostics(String movementMode, GameOptions options, ClientPlayerEntity player,
-                                        BlockPos waypoint, double targetDy, int routeIndex, int routeLength) {
+                                        BlockPos waypoint, double targetDy, boolean jumpWanted,
+                                        int routeIndex, int routeLength) {
         long now = System.currentTimeMillis();
         if (now - lastMovementDiagnosticsLogMillis < MOVEMENT_DIAGNOSTICS_LOG_INTERVAL_MILLIS) {
             return;
@@ -1788,7 +1792,7 @@ public class ActionExecutor {
         double waypointDy = waypoint.getY() - player.getY();
         BambooBotLog.info(String.format(
                 Locale.ROOT,
-                "MOVE m=%s dy=%.1f targetDy=%.1f waypointDy=%.1f pdy=%.1f col=%s ground=%s jump=%s sprint=%s route=%d/%d",
+                "MOVE m=%s dy=%.1f targetDy=%.1f waypointDy=%.1f pdy=%.1f col=%s ground=%s jumpWanted=%s jump=%s sprint=%s route=%d/%d",
                 movementMode,
                 targetDy,
                 targetDy,
@@ -1796,6 +1800,7 @@ public class ActionExecutor {
                 waypointDy,
                 player.horizontalCollision,
                 player.isOnGround(),
+                jumpWanted,
                 options.jumpKey.isPressed(),
                 options.sprintKey.isPressed(),
                 routeIndex,
