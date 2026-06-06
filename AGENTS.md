@@ -6,9 +6,11 @@ BambooBot is a Fabric client bot for Minecraft Java 1.21.11.
 
 The bot controls a real logged-in Minecraft player account through the official Minecraft client.
 
-## Core Architecture
+---
 
-### One Brain Loop
+# Core Architecture
+
+## One Brain Loop
 
 There must be exactly one brain loop responsible for decision making.
 
@@ -39,7 +41,9 @@ Event handlers must not:
 * Send chat responses directly.
 * Make autonomous decisions.
 
-### State Driven Design
+---
+
+## State Driven Design
 
 Input systems write state.
 
@@ -51,7 +55,129 @@ Sensors are read-only.
 
 Action executors perform Minecraft-side effects.
 
-## Dynamic Bot Identity
+---
+
+# Architecture Ownership
+
+## One Brain Does Not Mean One File
+
+The One Brain Rule governs decision making.
+
+It does not mean all logic should live in a single class.
+
+Example:
+
+```txt
+BrainLoop
+↓
+ActionExecutor
+↓
+FollowController
+↓
+RouteExecutor
+↓
+MovementRecovery
+↓
+LookController
+```
+
+This is still one brain.
+
+The brain decides.
+
+Controllers execute.
+
+---
+
+## Single Ownership
+
+Each subsystem should have one owner.
+
+Examples:
+
+* FollowController owns follow planning.
+* RouteExecutor owns route execution.
+* MovementRecovery owns stuck recovery.
+* LookController owns yaw/pitch behavior.
+* MovementDiagnostics owns movement logging.
+* PathPlanner owns route generation.
+
+Avoid duplicate ownership.
+
+Avoid implementing the same behavior in multiple places.
+
+---
+
+## ActionExecutor Responsibilities
+
+ActionExecutor is an orchestrator.
+
+It may:
+
+* Route requests.
+* Coordinate controllers.
+* Track active actions.
+* Aggregate results.
+* Report status.
+
+It should not become the owner of:
+
+* Follow planning.
+* Route execution.
+* Recovery logic.
+* Diagnostics.
+* Look behavior.
+* Path planning.
+
+Controllers own behavior.
+
+ActionExecutor coordinates behavior.
+
+---
+
+## No God Files
+
+Target file sizes:
+
+* 0-300 lines: healthy.
+* 300-500 lines: monitor.
+* 500-800 lines: refactor candidate.
+* 800+ lines: refactor required before new features.
+
+If a file grows beyond these limits, extract functionality into a dedicated subsystem.
+
+Avoid creating another index.js or ActionExecutor-style god file.
+
+---
+
+## Refactor Before Growth
+
+When adding a feature:
+
+* Extend the existing owner if one exists.
+* Otherwise create a dedicated owner.
+* Avoid placing temporary logic in ActionExecutor.
+* Avoid placing temporary logic in BrainLoop.
+
+Temporary code becomes permanent code.
+
+---
+
+## Phase Discipline
+
+A phase should primarily do one of:
+
+* Behavior change.
+* Refactor.
+* Diagnostics.
+
+Avoid combining all three whenever possible.
+
+Refactors should preserve behavior.
+
+---
+
+# Dynamic Bot Identity
 
 Do not hardcode the bot account name.
 
@@ -86,26 +212,32 @@ Support both:
 
 formats when applicable.
 
-## Active Ticket Rule
+---
+
+# Active Ticket Rule
 
 Only implement the functionality requested in the current ticket.
 
 Do not add additional commands, systems, abstractions, or features unless the ticket explicitly requests them.
 
-## Simplicity First
+---
+
+# Simplicity First
 
 Always implement the smallest working version of the active ticket.
 
 Prefer:
 
-* Small classes
-* Clear naming
-* Deterministic behavior
-* Minimal dependencies
+* Small classes.
+* Clear naming.
+* Deterministic behavior.
+* Minimal dependencies.
 
 Avoid building future systems before they are needed.
 
-## Command Pipeline
+---
+
+# Command Pipeline
 
 Commands should follow:
 
@@ -118,45 +250,53 @@ BotState
 ↓
 BrainLoop
 ↓
-Action or Chat Executor
+ActionExecutor
+↓
+Minecraft
 ```
 
 Command handlers should not bypass the brain loop.
 
-## Sensors
+---
+
+# Sensors
 
 Sensors may read Minecraft client state.
 
 Examples:
 
-* Position
-* Health
-* Food
-* Dimension
-* Inventory
-* Nearby entities
-* Looking-at target
+* Position.
+* Health.
+* Food.
+* Dimension.
+* Inventory.
+* Nearby entities.
+* Looking-at target.
 
 Sensors must not perform actions.
 
-## Actions
+---
+
+# Actions
 
 Gameplay effects should be executed through action executors.
 
 Examples:
 
-* Sending chat
-* Stopping movement
-* Looking at a target
-* Moving
-* Attacking
-* Opening containers
+* Sending chat.
+* Stopping movement.
+* Looking at a target.
+* Moving.
+* Attacking.
+* Opening containers.
 
 The brain loop decides.
 
 Executors perform.
 
-## Safety
+---
+
+# Safety
 
 Fail safely.
 
@@ -164,7 +304,9 @@ If client, player, or world state is unavailable, return a safe fallback instead
 
 Avoid uncaught exceptions inside tick handlers and event callbacks.
 
-## Testing
+---
+
+# Testing
 
 Every phase must include verification.
 
@@ -180,7 +322,9 @@ Gameplay features should be verified in Minecraft.
 
 Check latest.log for exceptions after testing.
 
-## Git Workflow
+---
+
+# Git Workflow
 
 After completing a ticket:
 
@@ -190,8 +334,20 @@ After completing a ticket:
 4. Leave the working tree clean.
 5. Do not push unless explicitly requested.
 
-## Guiding Principle
+---
+
+# Guiding Principle
 
 Build a reliable player bot first.
 
 Add complexity only when the previous layer is proven working.
+
+One brain.
+
+Many workers.
+
+Single ownership.
+
+Deterministic behavior.
+
+Reliable before intelligent.
