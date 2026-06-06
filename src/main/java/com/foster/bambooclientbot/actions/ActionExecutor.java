@@ -41,9 +41,10 @@ public class ActionExecutor {
     private static final double FOLLOW_DISTANCE = 3.0;
     private static final double FOLLOW_SPRINT_ENABLE_DISTANCE = 6.0;
     private static final double FOLLOW_SPRINT_DISABLE_DISTANCE = 4.0;
-    private static final double FOLLOW_REPLAN_DISTANCE = 2.5;
+    private static final double FOLLOW_REPLAN_DISTANCE = 1.5;
     private static final double FOLLOW_DIRECT_CHASE_DISTANCE = 12.0;
     private static final double FOLLOW_WAYPOINT_DISTANCE = 1.0;
+    private static final int FOLLOW_GOAL_VERTICAL_SEARCH = 1;
     private static final int FOLLOW_REPLAN_TICKS = 10;
     private static final int FOLLOW_PREDICTION_TICKS = 10;
     private static final int FOLLOW_ROUTE_LOOKAHEAD_STEPS = 2;
@@ -71,7 +72,7 @@ public class ActionExecutor {
     private ActionRequest activeGoto;
     private List<BlockPos> activeFollowRoute = List.of();
     private int activeFollowRouteIndex;
-    private BlockPos activeFollowRouteTarget;
+    private FollowGoal activeFollowGoal;
     private int followReplanTicks;
     private double bestFollowWaypointDistance = Double.POSITIVE_INFINITY;
     private int followStuckTicks;
@@ -1243,9 +1244,8 @@ public class ActionExecutor {
             followReplanTicks--;
         }
 
-        BlockPos targetPosition = predictedFollowTarget(target);
-        boolean targetMoved = activeFollowRouteTarget == null
-                || activeFollowRouteTarget.getSquaredDistance(targetPosition) > FOLLOW_REPLAN_DISTANCE * FOLLOW_REPLAN_DISTANCE;
+        boolean targetMoved = activeFollowGoal == null
+                || activeFollowGoal.targetMovedMoreThan(target, FOLLOW_REPLAN_DISTANCE);
 
         if (activeFollowRoute.isEmpty() || targetMoved || followReplanTicks <= 0) {
             planFollowRoute(client, player, target);
@@ -1258,21 +1258,21 @@ public class ActionExecutor {
             return;
         }
 
-        BlockPos targetPosition = predictedFollowTarget(target);
-        PathPlanResult plan = pathPlanner.plan(client.world, player.getBlockPos(), targetPosition);
+        FollowPlan followPlan = planFollowGoal(client, player, target);
         followReplanTicks = FOLLOW_REPLAN_TICKS;
 
-        if (!plan.found()) {
+        if (!followPlan.plan().found()) {
             activeFollowRoute = List.of();
             activeFollowRouteIndex = 0;
-            activeFollowRouteTarget = targetPosition;
-            state.setActiveFollowRoute(activeFollow.actionData(), 0, 0, plan.reason(), followStuckReplans, followStuckTicks);
+            activeFollowGoal = followPlan.goal();
+            state.setActiveFollowRoute(activeFollow.actionData(), 0, 0, followPlan.plan().reason(),
+                    followStuckReplans, followStuckTicks);
             return;
         }
 
-        activeFollowRoute = plan.path();
+        activeFollowRoute = followPlan.plan().path();
         activeFollowRouteIndex = activeFollowRoute.size() > 1 ? 1 : 0;
-        activeFollowRouteTarget = targetPosition;
+        activeFollowGoal = followPlan.goal();
         resetFollowStuckTracking();
         state.setActiveFollowRoute(
                 activeFollow.actionData(),
@@ -1284,6 +1284,61 @@ public class ActionExecutor {
         );
     }
 
+    private FollowPlan planFollowGoal(MinecraftClient client, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
+        FollowGoal fallbackGoal = new FollowGoal(target, entityPosition(target), target.getBlockPos());
+        PathPlanResult bestPlan = null;
+        FollowGoal bestGoal = fallbackGoal;
+
+        for (BlockPos candidate : followGoalCandidates(target)) {
+            PathPlanResult plan = pathPlanner.plan(client.world, player.getBlockPos(), candidate);
+            if (!plan.found()) {
+                continue;
+            }
+
+            if (bestPlan == null || plan.length() < bestPlan.length()) {
+                bestPlan = plan;
+                bestGoal = new FollowGoal(target, entityPosition(target), candidate);
+            }
+        }
+
+        if (bestPlan == null) {
+            return new FollowPlan(fallbackGoal, PathPlanResult.notFound("path_not_found"));
+        }
+
+        return new FollowPlan(bestGoal, bestPlan);
+    }
+
+    private List<BlockPos> followGoalCandidates(AbstractClientPlayerEntity target) {
+        List<BlockPos> candidates = new ArrayList<>();
+        BlockPos targetBlock = target.getBlockPos();
+        int radiusLimit = (int) Math.ceil(FOLLOW_DISTANCE);
+
+        for (int radius = 1; radius <= radiusLimit; radius++) {
+            for (int deltaX = -radius; deltaX <= radius; deltaX++) {
+                for (int deltaZ = -radius; deltaZ <= radius; deltaZ++) {
+                    if (Math.max(Math.abs(deltaX), Math.abs(deltaZ)) != radius) {
+                        continue;
+                    }
+
+                    double horizontalDistance = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
+                    if (horizontalDistance > FOLLOW_DISTANCE) {
+                        continue;
+                    }
+
+                    for (int deltaY = -FOLLOW_GOAL_VERTICAL_SEARCH; deltaY <= FOLLOW_GOAL_VERTICAL_SEARCH; deltaY++) {
+                        candidates.add(targetBlock.add(deltaX, deltaY, deltaZ));
+                    }
+                }
+            }
+        }
+
+        return candidates;
+    }
+
+    private Vec3d entityPosition(AbstractClientPlayerEntity entity) {
+        return new Vec3d(entity.getX(), entity.getY(), entity.getZ());
+    }
+
     private void clearActiveFollowRoute() {
         clearActiveFollowRouteLocal();
         state.clearActiveFollowRoute();
@@ -1292,7 +1347,7 @@ public class ActionExecutor {
     private void clearActiveFollowRouteLocal() {
         activeFollowRoute = List.of();
         activeFollowRouteIndex = 0;
-        activeFollowRouteTarget = null;
+        activeFollowGoal = null;
         followReplanTicks = 0;
         bestFollowWaypointDistance = Double.POSITIVE_INFINITY;
         followStuckTicks = 0;
@@ -1772,6 +1827,18 @@ public class ActionExecutor {
         options.backKey.setPressed(false);
         options.leftKey.setPressed(false);
         options.rightKey.setPressed(false);
+    }
+
+    private record FollowGoal(AbstractClientPlayerEntity target, Vec3d targetPosition, BlockPos routeGoal) {
+        private boolean targetMovedMoreThan(AbstractClientPlayerEntity currentTarget, double distance) {
+            return currentTarget == null
+                    || currentTarget != target
+                    || new Vec3d(currentTarget.getX(), currentTarget.getY(), currentTarget.getZ()).squaredDistanceTo(targetPosition)
+                    > distance * distance;
+        }
+    }
+
+    private record FollowPlan(FollowGoal goal, PathPlanResult plan) {
     }
 
     private KeyBinding movementKey(GameOptions options, ActionRequest.ActionType actionType) {
