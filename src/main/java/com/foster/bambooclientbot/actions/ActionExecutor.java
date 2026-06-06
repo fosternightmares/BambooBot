@@ -1304,7 +1304,9 @@ public class ActionExecutor {
     }
 
     private boolean canDirectChase(ClientPlayerEntity player, AbstractClientPlayerEntity target) {
-        return player.distanceTo(target) <= FOLLOW_DIRECT_CHASE_DISTANCE && player.canSee(target);
+        return Math.abs(target.getY() - player.getY()) <= 0.5
+                && player.distanceTo(target) <= FOLLOW_DIRECT_CHASE_DISTANCE
+                && player.canSee(target);
     }
 
     private void chaseFollowTarget(GameOptions options, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
