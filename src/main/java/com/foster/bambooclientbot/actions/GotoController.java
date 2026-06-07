@@ -10,11 +10,13 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.option.GameOptions;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
 
 class GotoController {
     private static final double GOTO_HORIZONTAL_ARRIVAL_DISTANCE = 1.5;
     private static final double GOTO_VERTICAL_ARRIVAL_DISTANCE = 2.0;
     private static final double GOTO_WAYPOINT_DISTANCE = 0.8;
+    private static final double GOTO_FINAL_GAZE_DISTANCE = 4.0;
     private static final int ROUTE_STUCK_TICKS = 60;
     private static final int ROUTE_MAX_STUCK_REPLANS = 3;
 
@@ -81,7 +83,11 @@ class GotoController {
             return;
         }
 
-        lookController.rotateToward(player, lookController.routeLookTarget(player, activeGotoRoute, activeGotoRouteIndex));
+        Vec3d steeringTarget = lookController.routeLookTarget(player, activeGotoRoute, activeGotoRouteIndex);
+        Vec3d gazeTarget = horizontalDistance <= GOTO_FINAL_GAZE_DISTANCE
+                ? gotoGazeTarget(target)
+                : lookController.routePreviewGazeTarget(player, activeGotoRoute, activeGotoRouteIndex);
+        lookController.rotateForNavigation(player, steeringTarget, gazeTarget);
         routeExecutor.tickJumpCooldown();
         routeExecutor.executeGotoRoute(client.options, player, waypoint, horizontalDistance);
         movementDiagnostics.logMovement("goto", client.options, player, waypoint, waypoint.getY() - player.getY(),
@@ -137,7 +143,11 @@ class GotoController {
         state.setFollowJump(false);
         activeGotoRoute = plan.path();
         activeGotoRouteIndex = activeGotoRoute.size() > 1 ? 1 : 0;
-        lookController.rotateToward(client.player, lookController.routeLookTarget(client.player, activeGotoRoute, activeGotoRouteIndex));
+        lookController.rotateForNavigation(
+                client.player,
+                lookController.routeLookTarget(client.player, activeGotoRoute, activeGotoRouteIndex),
+                lookController.routePreviewGazeTarget(client.player, activeGotoRoute, activeGotoRouteIndex)
+        );
         resetStuckTracking();
         state.setActiveGoto(target, horizontalDistance, activeGotoRouteIndex, activeGotoRoute.size(), gotoStuckReplans,
                 movementRecovery.gotoStuckTicks());
@@ -257,6 +267,10 @@ class GotoController {
         double deltaX = target.x() - player.getX();
         double deltaZ = target.z() - player.getZ();
         return Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
+    }
+
+    private Vec3d gotoGazeTarget(GotoTarget target) {
+        return new Vec3d(target.x(), target.y() + 1.5, target.z());
     }
 
     private double horizontalDistance(ClientPlayerEntity player, BlockPos target) {

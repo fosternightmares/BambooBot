@@ -1,26 +1,36 @@
 package com.foster.bambooclientbot.actions;
 
 import java.util.List;
+import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 
 class LookController {
     private static final double ROUTE_LOOK_HEIGHT = 1.5;
+    private static final int ROUTE_GAZE_PREVIEW_OFFSET = 3;
+    private static final double MAX_GAZE_YAW_DELTA = 10.0;
+    private static final double MAX_GAZE_PITCH_DELTA = 8.0;
 
     void rotateToward(ClientPlayerEntity player, Vec3d targetPosition) {
-        Vec3d eyePosition = player.getEyePos();
-        double deltaX = targetPosition.x - eyePosition.x;
-        double deltaY = targetPosition.y - eyePosition.y;
-        double deltaZ = targetPosition.z - eyePosition.z;
-        double horizontalDistance = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
-        float yaw = (float) (Math.toDegrees(Math.atan2(deltaZ, deltaX)) - 90.0);
-        float pitch = (float) -Math.toDegrees(Math.atan2(deltaY, horizontalDistance));
+        Angles angles = anglesTo(player, targetPosition);
 
-        player.setYaw(yaw);
+        player.setYaw(angles.yaw());
+        player.setPitch(angles.pitch());
+        player.setHeadYaw(angles.yaw());
+        player.setBodyYaw(angles.yaw());
+    }
+
+    void rotateForNavigation(ClientPlayerEntity player, Vec3d steeringTarget, Vec3d gazeTarget) {
+        Angles steeringAngles = anglesTo(player, steeringTarget);
+        Angles gazeAngles = anglesTo(player, gazeTarget);
+        float headYaw = approachAngle(player.getHeadYaw(), gazeAngles.yaw(), MAX_GAZE_YAW_DELTA);
+        float pitch = approachAngle(player.getPitch(), gazeAngles.pitch(), MAX_GAZE_PITCH_DELTA);
+
+        player.setYaw(steeringAngles.yaw());
         player.setPitch(pitch);
-        player.setHeadYaw(yaw);
-        player.setBodyYaw(yaw);
+        player.setHeadYaw(headYaw);
+        player.setBodyYaw(steeringAngles.yaw());
     }
 
     Vec3d routeLookTarget(ClientPlayerEntity player, List<BlockPos> route, int routeIndex) {
@@ -41,7 +51,69 @@ class LookController {
         return waypointCenter(route.get(routeIndex));
     }
 
+    Vec3d routePreviewGazeTarget(ClientPlayerEntity player, List<BlockPos> route, int routeIndex) {
+        int previewIndex = routeIndex;
+
+        if (routeIndex + ROUTE_GAZE_PREVIEW_OFFSET < route.size()) {
+            previewIndex = routeIndex + ROUTE_GAZE_PREVIEW_OFFSET;
+        } else if (routeIndex + 2 < route.size()) {
+            previewIndex = routeIndex + 2;
+        } else if (routeIndex + 1 < route.size()) {
+            previewIndex = routeIndex + 1;
+        }
+
+        BlockPos preview = route.get(previewIndex);
+        Vec3d previewCenter = waypointCenter(preview);
+        double lookY = Math.max(player.getEyeY() - 0.2, preview.getY() + ROUTE_LOOK_HEIGHT);
+        return new Vec3d(previewCenter.x, lookY, previewCenter.z);
+    }
+
+    Vec3d upperBodyTarget(AbstractClientPlayerEntity target) {
+        double y = target.getY() + target.getHeight() * 0.75;
+        return new Vec3d(target.getX(), y, target.getZ());
+    }
+
     private Vec3d waypointCenter(BlockPos waypoint) {
         return new Vec3d(waypoint.getX() + 0.5, waypoint.getY(), waypoint.getZ() + 0.5);
+    }
+
+    private Angles anglesTo(ClientPlayerEntity player, Vec3d targetPosition) {
+        Vec3d eyePosition = player.getEyePos();
+        double deltaX = targetPosition.x - eyePosition.x;
+        double deltaY = targetPosition.y - eyePosition.y;
+        double deltaZ = targetPosition.z - eyePosition.z;
+        double horizontalDistance = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
+        float yaw = (float) (Math.toDegrees(Math.atan2(deltaZ, deltaX)) - 90.0);
+        float pitch = (float) -Math.toDegrees(Math.atan2(deltaY, horizontalDistance));
+        return new Angles(yaw, pitch);
+    }
+
+    private float approachAngle(float current, float target, double maxDelta) {
+        float delta = wrapDegrees(target - current);
+
+        if (delta > maxDelta) {
+            delta = (float) maxDelta;
+        } else if (delta < -maxDelta) {
+            delta = (float) -maxDelta;
+        }
+
+        return current + delta;
+    }
+
+    private float wrapDegrees(float degrees) {
+        float wrapped = degrees % 360.0f;
+
+        if (wrapped >= 180.0f) {
+            wrapped -= 360.0f;
+        }
+
+        if (wrapped < -180.0f) {
+            wrapped += 360.0f;
+        }
+
+        return wrapped;
+    }
+
+    private record Angles(float yaw, float pitch) {
     }
 }
