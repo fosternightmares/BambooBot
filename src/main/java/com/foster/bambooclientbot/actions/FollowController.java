@@ -162,7 +162,7 @@ class FollowController {
         Vec3d gazeTarget = player.canSee(target)
                 ? lookController.upperBodyTarget(target)
                 : lookController.routePreviewGazeTarget(player, route(), routeIndex());
-        lookController.rotateForNavigation(player, lookController.followRouteLookTarget(route(), routeIndex()), gazeTarget);
+        lookController.rotateForNavigation(player, lookController.routeSteeringTarget(player, route(), routeIndex()), gazeTarget);
         boolean jumpWanted = routeExecutor.executeFollowRoute(client.options, player, waypoint, player.distanceTo(target));
         movementDiagnostics.logMovement("follow_route", client.options, player, waypoint, waypoint.getY() - player.getY(),
                 jumpWanted,

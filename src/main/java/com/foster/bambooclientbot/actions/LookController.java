@@ -9,6 +9,8 @@ import net.minecraft.util.math.Vec3d;
 class LookController {
     private static final double ROUTE_LOOK_HEIGHT = 1.5;
     private static final int ROUTE_GAZE_PREVIEW_OFFSET = 3;
+    private static final int ROUTE_STEERING_LOOKAHEAD_OFFSET = 2;
+    private static final double ROUTE_STEERING_LOOKAHEAD_DISTANCE = 1.75;
     private static final double MAX_GAZE_YAW_DELTA = 10.0;
     private static final double MAX_GAZE_PITCH_DELTA = 8.0;
 
@@ -51,6 +53,23 @@ class LookController {
         return waypointCenter(route.get(routeIndex));
     }
 
+    Vec3d routeSteeringTarget(ClientPlayerEntity player, List<BlockPos> route, int routeIndex) {
+        int steeringIndex = routeIndex;
+
+        if (horizontalDistance(player, route.get(routeIndex)) <= ROUTE_STEERING_LOOKAHEAD_DISTANCE) {
+            if (canSteerAhead(route, routeIndex, ROUTE_STEERING_LOOKAHEAD_OFFSET)) {
+                steeringIndex = routeIndex + ROUTE_STEERING_LOOKAHEAD_OFFSET;
+            } else if (canSteerAhead(route, routeIndex, 1)) {
+                steeringIndex = routeIndex + 1;
+            }
+        }
+
+        BlockPos steeringWaypoint = route.get(steeringIndex);
+        Vec3d steeringCenter = waypointCenter(steeringWaypoint);
+        double lookY = Math.max(player.getEyeY() - 0.2, steeringWaypoint.getY() + ROUTE_LOOK_HEIGHT);
+        return new Vec3d(steeringCenter.x, lookY, steeringCenter.z);
+    }
+
     Vec3d routePreviewGazeTarget(ClientPlayerEntity player, List<BlockPos> route, int routeIndex) {
         int previewIndex = routeIndex;
 
@@ -75,6 +94,28 @@ class LookController {
 
     private Vec3d waypointCenter(BlockPos waypoint) {
         return new Vec3d(waypoint.getX() + 0.5, waypoint.getY(), waypoint.getZ() + 0.5);
+    }
+
+    private boolean canSteerAhead(List<BlockPos> route, int routeIndex, int offset) {
+        if (routeIndex + offset >= route.size()) {
+            return false;
+        }
+
+        int routeY = route.get(routeIndex).getY();
+
+        for (int index = routeIndex + 1; index <= routeIndex + offset; index++) {
+            if (route.get(index).getY() != routeY) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private double horizontalDistance(ClientPlayerEntity player, BlockPos target) {
+        double deltaX = target.getX() + 0.5 - player.getX();
+        double deltaZ = target.getZ() + 0.5 - player.getZ();
+        return Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
     }
 
     private Angles anglesTo(ClientPlayerEntity player, Vec3d targetPosition) {

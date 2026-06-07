@@ -83,7 +83,7 @@ class GotoController {
             return;
         }
 
-        Vec3d steeringTarget = lookController.routeLookTarget(player, activeGotoRoute, activeGotoRouteIndex);
+        Vec3d steeringTarget = lookController.routeSteeringTarget(player, activeGotoRoute, activeGotoRouteIndex);
         Vec3d gazeTarget = horizontalDistance <= GOTO_FINAL_GAZE_DISTANCE
                 ? gotoGazeTarget(target)
                 : lookController.routePreviewGazeTarget(player, activeGotoRoute, activeGotoRouteIndex);
@@ -145,7 +145,7 @@ class GotoController {
         activeGotoRouteIndex = activeGotoRoute.size() > 1 ? 1 : 0;
         lookController.rotateForNavigation(
                 client.player,
-                lookController.routeLookTarget(client.player, activeGotoRoute, activeGotoRouteIndex),
+                lookController.routeSteeringTarget(client.player, activeGotoRoute, activeGotoRouteIndex),
                 lookController.routePreviewGazeTarget(client.player, activeGotoRoute, activeGotoRouteIndex)
         );
         resetStuckTracking();
