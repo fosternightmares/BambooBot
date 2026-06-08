@@ -11,12 +11,20 @@ class LookController {
     private static final int ROUTE_GAZE_PREVIEW_OFFSET = 3;
     private static final int ROUTE_STEERING_LOOKAHEAD_OFFSET = 2;
     private static final double ROUTE_STEERING_LOOKAHEAD_DISTANCE = 1.75;
-    private static final double MAX_GAZE_YAW_DELTA = 10.0;
-    private static final double MAX_GAZE_PITCH_DELTA = 8.0;
+    private static final double GAZE_TARGET_TINY_MOVE_DISTANCE = 0.35;
+    private static final double GAZE_TARGET_MEANINGFUL_MOVE_DISTANCE = 1.25;
+    private static final long GAZE_TARGET_MIN_HOLD_MILLIS = 250L;
+    private static final double MAX_GAZE_YAW_DELTA = 6.0;
+    private static final double MAX_GAZE_PITCH_DELTA = 4.0;
+
+    private Vec3d stableGazeTarget;
+    private long lastGazeTargetUpdateMillis;
 
     void rotateToward(ClientPlayerEntity player, Vec3d targetPosition) {
         Angles angles = anglesTo(player, targetPosition);
 
+        stableGazeTarget = targetPosition;
+        lastGazeTargetUpdateMillis = System.currentTimeMillis();
         player.setYaw(angles.yaw());
         player.setPitch(angles.pitch());
         player.setHeadYaw(angles.yaw());
@@ -25,7 +33,8 @@ class LookController {
 
     void rotateForNavigation(ClientPlayerEntity player, Vec3d steeringTarget, Vec3d gazeTarget) {
         Angles steeringAngles = anglesTo(player, steeringTarget);
-        Angles gazeAngles = anglesTo(player, gazeTarget);
+        Vec3d stabilizedGazeTarget = stabilizedGazeTarget(gazeTarget);
+        Angles gazeAngles = anglesTo(player, stabilizedGazeTarget);
         float headYaw = approachAngle(player.getHeadYaw(), gazeAngles.yaw(), MAX_GAZE_YAW_DELTA);
         float pitch = approachAngle(player.getPitch(), gazeAngles.pitch(), MAX_GAZE_PITCH_DELTA);
 
@@ -116,6 +125,28 @@ class LookController {
         double deltaX = target.getX() + 0.5 - player.getX();
         double deltaZ = target.getZ() + 0.5 - player.getZ();
         return Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
+    }
+
+    private Vec3d stabilizedGazeTarget(Vec3d requestedTarget) {
+        long now = System.currentTimeMillis();
+
+        if (stableGazeTarget == null) {
+            stableGazeTarget = requestedTarget;
+            lastGazeTargetUpdateMillis = now;
+            return stableGazeTarget;
+        }
+
+        double squaredDistance = stableGazeTarget.squaredDistanceTo(requestedTarget);
+        double tinyMoveSquared = GAZE_TARGET_TINY_MOVE_DISTANCE * GAZE_TARGET_TINY_MOVE_DISTANCE;
+        double meaningfulMoveSquared = GAZE_TARGET_MEANINGFUL_MOVE_DISTANCE * GAZE_TARGET_MEANINGFUL_MOVE_DISTANCE;
+        boolean holdExpired = now - lastGazeTargetUpdateMillis >= GAZE_TARGET_MIN_HOLD_MILLIS;
+
+        if (squaredDistance >= meaningfulMoveSquared || (holdExpired && squaredDistance >= tinyMoveSquared)) {
+            stableGazeTarget = requestedTarget;
+            lastGazeTargetUpdateMillis = now;
+        }
+
+        return stableGazeTarget;
     }
 
     private Angles anglesTo(ClientPlayerEntity player, Vec3d targetPosition) {
