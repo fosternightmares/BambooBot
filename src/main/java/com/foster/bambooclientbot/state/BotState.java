@@ -3,7 +3,9 @@ package com.foster.bambooclientbot.state;
 import com.foster.bambooclientbot.actions.ActionRequest;
 import com.foster.bambooclientbot.commands.CommandRequest;
 import java.util.ArrayDeque;
+import java.util.Locale;
 import java.util.Queue;
+import java.util.UUID;
 
 /*
  * Source-of-truth rule: when Minecraft already owns live client state, read it
@@ -49,6 +51,13 @@ public class BotState {
     private boolean autoEatActive;
     private long lastAutoEatTimeMillis;
     private String lastAutoEatResult = "hunger_ok";
+    private float currentHealth = -1.0f;
+    private float previousHealth = -1.0f;
+    private float damageAmount;
+    private String damageType = "none";
+    private String sourceEntity = "none";
+    private String attackerEntity = "none";
+    private UUID attackerUuid;
 
     public void queueCommand(CommandRequest request) {
         pendingCommands.add(request);
@@ -327,5 +336,45 @@ public class BotState {
         return "autoEatActive=" + autoEatActive
                 + " lastAutoEatAgeMs=" + ageMillis
                 + " lastAutoEatResult=" + lastAutoEatResult;
+    }
+
+    public void observeDamage(float observedHealth, String observedDamageType, String observedSourceEntity,
+                              String observedAttackerEntity, UUID observedAttackerUuid) {
+        float lastObservedHealth = currentHealth;
+
+        previousHealth = lastObservedHealth < 0.0f ? observedHealth : lastObservedHealth;
+        currentHealth = observedHealth;
+
+        if (lastObservedHealth < 0.0f || observedHealth >= lastObservedHealth) {
+            return;
+        }
+
+        damageAmount = lastObservedHealth - observedHealth;
+        damageType = safeValue(observedDamageType);
+        sourceEntity = safeValue(observedSourceEntity);
+        attackerEntity = safeValue(observedAttackerEntity);
+        attackerUuid = observedAttackerUuid;
+    }
+
+    public String damageStatus() {
+        return "currentHealth=" + formatHealth(currentHealth)
+                + " previousHealth=" + formatHealth(previousHealth)
+                + " damageAmount=" + formatHealth(damageAmount)
+                + " damageType=" + damageType
+                + " sourceEntity=" + sourceEntity
+                + " attackerEntity=" + attackerEntity
+                + " attackerUuid=" + (attackerUuid == null ? "none" : attackerUuid);
+    }
+
+    private String safeValue(String value) {
+        return value == null || value.isBlank() ? "none" : value;
+    }
+
+    private String formatHealth(float health) {
+        if (health < 0.0f) {
+            return "unknown";
+        }
+
+        return String.format(Locale.ROOT, "%.1f", health);
     }
 }

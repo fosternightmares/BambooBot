@@ -38,6 +38,7 @@ public class PlayerSensors {
                 + " autoUse=" + state.autoUse()
                 + " autoSneak=" + state.autoSneak()
                 + " " + state.autoEatStatus()
+                + " " + state.damageStatus()
                 + " " + state.routeStatus()
                 + " " + state.gotoStatus()
                 + " " + state.followRouteStatus()
