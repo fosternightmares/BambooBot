@@ -2,6 +2,7 @@ package com.foster.bambooclientbot.state;
 
 import com.foster.bambooclientbot.actions.ActionRequest;
 import com.foster.bambooclientbot.commands.CommandRequest;
+import com.foster.bambooclientbot.logging.BambooBotLog;
 import java.util.ArrayDeque;
 import java.util.Locale;
 import java.util.Queue;
@@ -354,6 +355,11 @@ public class BotState {
         sourceEntity = safeValue(observedSourceEntity);
         attackerEntity = safeValue(observedAttackerEntity);
         attackerUuid = observedAttackerUuid;
+        BambooBotLog.info("DAMAGE amount=" + formatHealth(damageAmount)
+                + " type=" + damageType
+                + " attacker=" + attackerEntity
+                + " uuid=" + (attackerUuid == null ? "none" : attackerUuid)
+                + " health=" + formatHealth(currentHealth));
     }
 
     public String damageStatus() {
