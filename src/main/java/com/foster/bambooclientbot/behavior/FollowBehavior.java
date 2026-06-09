@@ -36,6 +36,8 @@ public class FollowBehavior {
     private static final int FOLLOW_GOAL_VERTICAL_SEARCH = 1;
     private static final int FOLLOW_REPLAN_TICKS = 10;
     private static final int FOLLOW_SHORT_ROUTE_LENGTH = 3;
+    private static final double FOLLOW_ROUTE_HORIZON_MIN_DISTANCE = 4.0;
+    private static final double FOLLOW_ROUTE_HORIZON_MAX_DISTANCE = 8.0;
     private static final double FOLLOW_NEAR_REJECT_YAW = 85.0;
     private static final double FOLLOW_REVERSE_REJECT_YAW = 120.0;
     private static final double FOLLOW_TURN_SCORE_WEIGHT = 1.0 / 45.0;
@@ -289,7 +291,7 @@ public class FollowBehavior {
             return;
         }
 
-        route = followPlan.plan().path();
+        route = routeHorizon(followPlan.plan().path());
         routeIndex = route.size() > 1 ? 1 : 0;
         goal = followPlan.goal();
         plannedSuccessfully = true;
@@ -559,6 +561,49 @@ public class FollowBehavior {
         }
 
         return score;
+    }
+
+    private List<BlockPos> routeHorizon(List<BlockPos> plannedRoute) {
+        if (plannedRoute.size() <= 2) {
+            return plannedRoute;
+        }
+
+        double routeDistance = 0.0;
+        int horizonIndex = plannedRoute.size() - 1;
+
+        for (int index = 1; index < plannedRoute.size(); index++) {
+            routeDistance += blockDistance(plannedRoute.get(index - 1), plannedRoute.get(index));
+
+            if (routeDistance >= FOLLOW_ROUTE_HORIZON_MIN_DISTANCE) {
+                horizonIndex = index;
+                break;
+            }
+        }
+
+        while (horizonIndex < plannedRoute.size() - 1
+                && routeDistance < FOLLOW_ROUTE_HORIZON_MAX_DISTANCE) {
+            double nextDistance = blockDistance(plannedRoute.get(horizonIndex), plannedRoute.get(horizonIndex + 1));
+
+            if (routeDistance + nextDistance > FOLLOW_ROUTE_HORIZON_MAX_DISTANCE) {
+                break;
+            }
+
+            routeDistance += nextDistance;
+            horizonIndex++;
+        }
+
+        if (horizonIndex >= plannedRoute.size() - 1) {
+            return plannedRoute;
+        }
+
+        return List.copyOf(plannedRoute.subList(0, horizonIndex + 1));
+    }
+
+    private double blockDistance(BlockPos first, BlockPos second) {
+        double deltaX = second.getX() - first.getX();
+        double deltaY = second.getY() - first.getY();
+        double deltaZ = second.getZ() - first.getZ();
+        return Math.sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
     }
 
     private double initialRouteTurnDegrees(ClientPlayerEntity player, List<BlockPos> plan) {
