@@ -22,7 +22,8 @@ import net.minecraft.util.math.Vec3d;
 
 public class FollowBehavior {
     private static final double FOLLOW_DISTANCE = 3.0;
-    private static final double FOLLOW_NEAR_HOLD_BUFFER = 0.75;
+    private static final double FOLLOW_HOLD_ENTER_DISTANCE = 3.6;
+    private static final double FOLLOW_HOLD_EXIT_DISTANCE = 4.5;
     private static final double FOLLOW_SPRINT_ENABLE_DISTANCE = 6.0;
     private static final boolean FOLLOW_DIRECT_CHASE_ENABLED = false;
     private static final double FOLLOW_DIRECT_CHASE_DISTANCE = 12.0;
@@ -55,6 +56,7 @@ public class FollowBehavior {
     private FollowGoal goal;
     private int replanTicks;
     private boolean plannedSuccessfully;
+    private boolean followHoldSatisfied;
 
     public FollowBehavior(BotState state, PathPlanner pathPlanner, LookController lookController,
                           RouteExecutor routeExecutor, MovementRecovery movementRecovery,
@@ -104,14 +106,11 @@ public class FollowBehavior {
         }
 
         double followDistanceToTarget = player.distanceTo(target);
-        if (followDistanceToTarget <= FOLLOW_DISTANCE + FOLLOW_NEAR_HOLD_BUFFER) {
-            logFollowDiagnostics(player, target, true);
-            movementController.clearRouteMovement(client.options, "follow_hold");
-            state.setFollowJump(false);
-            lookController.clearNavigationGaze();
-            clearActiveFollowRoute();
+        if (shouldHoldFollow(followDistanceToTarget)) {
+            holdFollowPosition(client.options, player, target);
             return;
         }
+        followHoldSatisfied = false;
 
         routeExecutor.tickJumpCooldown();
 
@@ -225,6 +224,7 @@ public class FollowBehavior {
         }
 
         cancelConflictingMovement.run();
+        followHoldSatisfied = false;
         clearActiveFollowRoute();
         routeExecutor.resetJumpCooldown();
         movementController.clearRouteMovement(client.options, "follow_start");
@@ -242,6 +242,7 @@ public class FollowBehavior {
 
     public void cancelActiveFollow() {
         activeFollow = null;
+        followHoldSatisfied = false;
         clearActiveFollowRoute();
     }
 
@@ -358,6 +359,35 @@ public class FollowBehavior {
     private void clearActiveFollowRouteLocal() {
         clearLocal();
         resetFollowState();
+    }
+
+    private boolean shouldHoldFollow(double followDistanceToTarget) {
+        if (followHoldSatisfied) {
+            return followDistanceToTarget < FOLLOW_HOLD_EXIT_DISTANCE;
+        }
+
+        if (followDistanceToTarget <= FOLLOW_HOLD_ENTER_DISTANCE) {
+            return true;
+        }
+
+        return followDistanceToTarget < FOLLOW_HOLD_EXIT_DISTANCE && !hasUsefulActiveFollowRoute();
+    }
+
+    private boolean hasUsefulActiveFollowRoute() {
+        return !route.isEmpty() && route.size() > FOLLOW_SHORT_ROUTE_LENGTH;
+    }
+
+    private void holdFollowPosition(GameOptions options, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
+        boolean enteringHold = !followHoldSatisfied;
+        followHoldSatisfied = true;
+        logFollowDiagnostics(player, target, true);
+        movementController.clearRouteMovement(options, "follow_hold");
+        state.setFollowJump(false);
+        lookController.clearNavigationGaze();
+
+        if (enteringHold) {
+            clearActiveFollowRoute();
+        }
     }
 
     private void resetFollowState() {
