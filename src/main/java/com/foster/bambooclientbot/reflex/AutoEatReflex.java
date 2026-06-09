@@ -1,9 +1,13 @@
 package com.foster.bambooclientbot.reflex;
 
 import com.foster.bambooclientbot.actions.ActionExecutor;
+import com.foster.bambooclientbot.intent.BotIntentType;
+import com.foster.bambooclientbot.intent.IntentPlan;
+import com.foster.bambooclientbot.intent.IntentRequest;
 import com.foster.bambooclientbot.inventory.FoodResolver;
 import com.foster.bambooclientbot.logging.BambooBotLog;
 import com.foster.bambooclientbot.state.BotState;
+import java.util.List;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
@@ -49,7 +53,16 @@ public class AutoEatReflex implements Reflex {
     }
 
     @Override
-    public void tick(MinecraftClient client, BotState state, ActionExecutor actions) {
+    public List<IntentRequest> collectIntents(MinecraftClient client, BotState state) {
+        if (state.autoEatActive() || shouldRequestAutoEat(client)) {
+            return List.of(new IntentRequest(name(), BotIntentType.AUTO_EAT));
+        }
+
+        return List.of();
+    }
+
+    @Override
+    public void tick(MinecraftClient client, BotState state, ActionExecutor actions, IntentPlan intentPlan) {
         if (client == null || client.player == null || client.options == null) {
             if (state.autoEatActive()) {
                 stopEating(client, state, actions, "hunger_ok");
@@ -60,8 +73,14 @@ public class AutoEatReflex implements Reflex {
         }
 
         ClientPlayerEntity player = client.player;
+        boolean approved = intentPlan.isApproved(BotIntentType.AUTO_EAT);
 
         if (state.autoEatActive()) {
+            if (!approved) {
+                stopEating(client, state, actions, autoEatDeniedResult(client, player));
+                return;
+            }
+
             tickActiveEating(client, state, actions, player);
             return;
         }
@@ -85,6 +104,10 @@ public class AutoEatReflex implements Reflex {
 
         if (player.isUsingItem()) {
             recordResult(state, hunger, "already_eating");
+            return;
+        }
+
+        if (!approved) {
             return;
         }
 
@@ -199,6 +222,32 @@ public class AutoEatReflex implements Reflex {
 
     private boolean isContainerOpen(MinecraftClient client) {
         return client.currentScreen instanceof HandledScreen<?> && !(client.currentScreen instanceof InventoryScreen);
+    }
+
+    private boolean shouldRequestAutoEat(MinecraftClient client) {
+        if (client == null || client.player == null || client.options == null) {
+            return false;
+        }
+
+        ClientPlayerEntity player = client.player;
+
+        if (player.isDead() || !player.isAlive() || player.isUsingItem()) {
+            return false;
+        }
+
+        return player.getHungerManager().getFoodLevel() <= hungerThreshold;
+    }
+
+    private String autoEatDeniedResult(MinecraftClient client, ClientPlayerEntity player) {
+        if (isContainerOpen(client)) {
+            return "container_open";
+        }
+
+        if (player.getHungerManager().getFoodLevel() > hungerThreshold) {
+            return "hunger_ok";
+        }
+
+        return "hunger_ok";
     }
 
     private void recordResult(BotState state, int hunger, String result) {

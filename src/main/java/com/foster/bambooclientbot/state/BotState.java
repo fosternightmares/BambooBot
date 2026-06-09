@@ -85,6 +85,10 @@ public class BotState {
         return pendingActions.poll();
     }
 
+    public ActionRequest peekAction() {
+        return pendingActions.peek();
+    }
+
     public void setLookedAtBlock(LookedAtBlock lookedAtBlock) {
         this.lookedAtBlock = lookedAtBlock;
     }

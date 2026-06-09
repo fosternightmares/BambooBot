@@ -1,7 +1,11 @@
 package com.foster.bambooclientbot.reflex;
 
 import com.foster.bambooclientbot.actions.ActionExecutor;
+import com.foster.bambooclientbot.intent.BotIntentType;
+import com.foster.bambooclientbot.intent.IntentPlan;
+import com.foster.bambooclientbot.intent.IntentRequest;
 import com.foster.bambooclientbot.state.BotState;
+import java.util.List;
 import java.util.UUID;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
@@ -23,7 +27,16 @@ public class DamageAwarenessReflex implements Reflex {
     }
 
     @Override
-    public void tick(MinecraftClient client, BotState state, ActionExecutor actions) {
+    public List<IntentRequest> collectIntents(MinecraftClient client, BotState state) {
+        return List.of(new IntentRequest(name(), BotIntentType.PASSIVE_AWARENESS));
+    }
+
+    @Override
+    public void tick(MinecraftClient client, BotState state, ActionExecutor actions, IntentPlan intentPlan) {
+        if (!intentPlan.isApproved(BotIntentType.PASSIVE_AWARENESS)) {
+            return;
+        }
+
         if (client == null || client.player == null) {
             return;
         }

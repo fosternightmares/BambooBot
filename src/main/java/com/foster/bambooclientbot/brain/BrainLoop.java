@@ -3,6 +3,10 @@ package com.foster.bambooclientbot.brain;
 import com.foster.bambooclientbot.actions.ActionRequest;
 import com.foster.bambooclientbot.commands.CommandHelp;
 import com.foster.bambooclientbot.commands.CommandRequest;
+import com.foster.bambooclientbot.intent.BotIntentType;
+import com.foster.bambooclientbot.intent.IntentPlan;
+import com.foster.bambooclientbot.intent.IntentRequest;
+import com.foster.bambooclientbot.logging.BambooBotLog;
 import com.foster.bambooclientbot.navigation.NavigationGrid;
 import com.foster.bambooclientbot.navigation.PathPlanResult;
 import com.foster.bambooclientbot.navigation.PathPlanner;
@@ -11,8 +15,13 @@ import com.foster.bambooclientbot.sensors.WorldSensors;
 import com.foster.bambooclientbot.state.BotState;
 import com.foster.bambooclientbot.state.ContainerSnapshot;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.ingame.HandledScreen;
+import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.util.math.BlockPos;
+import java.util.EnumSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 public class BrainLoop {
     private static final int SNAPSHOT_DETAILS_MAX_LENGTH = 240;
@@ -22,6 +31,7 @@ public class BrainLoop {
     private final WorldSensors worldSensors;
     private final NavigationGrid navigationGrid = new NavigationGrid();
     private final PathPlanner pathPlanner = new PathPlanner(navigationGrid);
+    private String lastArbitrationDecision = "";
 
     public BrainLoop(BotState state, PlayerSensors playerSensors, WorldSensors worldSensors) {
         this.state = state;
@@ -138,6 +148,72 @@ public class BrainLoop {
                 state.queueAction(new ActionRequest(ActionRequest.ActionType.CAPTURE_INVENTORY_SNAPSHOT, ""));
             }
         }
+    }
+
+    public IntentPlan arbitrateIntents(MinecraftClient client, List<IntentRequest> requests) {
+        Set<BotIntentType> approved = EnumSet.noneOf(BotIntentType.class);
+        Set<BotIntentType> requested = EnumSet.noneOf(BotIntentType.class);
+        StringBuilder rejected = new StringBuilder();
+
+        for (IntentRequest request : requests) {
+            requested.add(request.type());
+
+            if (request.type() == BotIntentType.PASSIVE_AWARENESS) {
+                approved.add(request.type());
+            } else if (request.type() == BotIntentType.AUTO_EAT) {
+                String rejectionReason = autoEatRejectionReason(client);
+
+                if (rejectionReason.isBlank()) {
+                    approved.add(request.type());
+                } else {
+                    appendRejected(rejected, request.source(), request.type(), rejectionReason);
+                }
+            }
+        }
+
+        logArbitration(requested, approved, rejected);
+        return new IntentPlan(approved);
+    }
+
+    private String autoEatRejectionReason(MinecraftClient client) {
+        ActionRequest pendingAction = state.peekAction();
+
+        if (pendingAction != null) {
+            return "pending_action=" + pendingAction.actionType().name();
+        }
+
+        if (isContainerOpen(client)) {
+            return "container_open";
+        }
+
+        return "";
+    }
+
+    private boolean isContainerOpen(MinecraftClient client) {
+        return client != null
+                && client.currentScreen instanceof HandledScreen<?>
+                && !(client.currentScreen instanceof InventoryScreen);
+    }
+
+    private void appendRejected(StringBuilder rejected, String source, BotIntentType type, String reason) {
+        if (rejected.length() > 0) {
+            rejected.append(',');
+        }
+
+        rejected.append(source).append(':').append(type).append(':').append(reason);
+    }
+
+    private void logArbitration(Set<BotIntentType> requested, Set<BotIntentType> approved, StringBuilder rejected) {
+        String decision = "ARBITRATION requested=" + requested
+                + " approved=" + approved
+                + " rejected=" + (rejected.length() == 0 ? "none" : rejected);
+
+        if (decision.equals(lastArbitrationDecision)) {
+            return;
+        }
+
+        lastArbitrationDecision = decision;
+        BambooBotLog.info(decision);
     }
 
     private void queueContainerSnapshotDetails() {
