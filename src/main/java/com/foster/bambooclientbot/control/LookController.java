@@ -21,6 +21,7 @@ public class LookController {
     private static final double MAX_NAVIGATION_TARGET_YAW_CHANGE = 40.0;
     private static final float YAW_TIE_EPSILON = 0.01f;
 
+    // Store gaze intent as a world position; yaw/pitch remain Minecraft client state.
     private Vec3d stableGazeTarget;
     private long lastGazeTargetUpdateMillis;
     private Float lastNavigationSteeringYaw;

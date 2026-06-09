@@ -5,12 +5,21 @@ import com.foster.bambooclientbot.commands.CommandRequest;
 import java.util.ArrayDeque;
 import java.util.Queue;
 
+/*
+ * Source-of-truth rule: when Minecraft already owns live client state, read it
+ * from Minecraft at the decision/use site. BotState may queue requests, retain
+ * command results, and keep diagnostics or explicit snapshots, but those cached
+ * values must not become authoritative copies of live client state.
+ */
 public class BotState {
     private final Queue<CommandRequest> pendingCommands = new ArrayDeque<>();
     private final Queue<String> pendingChatMessages = new ArrayDeque<>();
     private final Queue<ActionRequest> pendingActions = new ArrayDeque<>();
+    // Sensor cache refreshed from client.crosshairTarget; consumers must treat it as a snapshot.
     private LookedAtBlock lookedAtBlock;
+    // Sensor cache refreshed from client.currentScreen; client.currentScreen remains authoritative.
     private ContainerState containerState = ContainerState.closed();
+    // Explicit command snapshots; live container/inventory contents remain Minecraft-owned.
     private ContainerSnapshot containerSnapshot;
     private InventorySnapshot inventorySnapshot;
     private String activeAction = "none";
