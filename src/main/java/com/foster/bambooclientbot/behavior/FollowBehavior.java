@@ -22,6 +22,7 @@ import net.minecraft.util.math.Vec3d;
 
 public class FollowBehavior {
     private static final double FOLLOW_DISTANCE = 3.0;
+    private static final double FOLLOW_NEAR_HOLD_BUFFER = 0.75;
     private static final double FOLLOW_SPRINT_ENABLE_DISTANCE = 6.0;
     private static final boolean FOLLOW_DIRECT_CHASE_ENABLED = false;
     private static final double FOLLOW_DIRECT_CHASE_DISTANCE = 12.0;
@@ -33,6 +34,11 @@ public class FollowBehavior {
     private static final double FOLLOW_WAYPOINT_DISTANCE = 1.0;
     private static final int FOLLOW_GOAL_VERTICAL_SEARCH = 1;
     private static final int FOLLOW_REPLAN_TICKS = 10;
+    private static final int FOLLOW_SHORT_ROUTE_LENGTH = 3;
+    private static final double FOLLOW_REVERSE_REJECT_YAW = 120.0;
+    private static final double FOLLOW_TURN_SCORE_WEIGHT = 1.0 / 45.0;
+    private static final double FOLLOW_NEAR_TURN_SCORE_WEIGHT = 1.0 / 20.0;
+    private static final double FOLLOW_SHORT_REVERSE_SCORE_PENALTY = 20.0;
 
     private final BotState state;
     private final PathPlanner pathPlanner;
@@ -97,7 +103,7 @@ public class FollowBehavior {
         }
 
         double followDistanceToTarget = player.distanceTo(target);
-        if (followDistanceToTarget <= FOLLOW_DISTANCE) {
+        if (followDistanceToTarget <= FOLLOW_DISTANCE + FOLLOW_NEAR_HOLD_BUFFER) {
             logFollowDiagnostics(player, target, true);
             movementController.clearRouteMovement(client.options, "follow_hold");
             state.setFollowJump(false);
@@ -458,10 +464,12 @@ public class FollowBehavior {
         FollowGoal fallbackGoal = new FollowGoal(target, entityPosition(target), target.getBlockPos());
         PathPlanResult bestPlan = null;
         FollowGoal bestGoal = fallbackGoal;
+        double bestScore = Double.POSITIVE_INFINITY;
         List<BlockPos> candidates = followGoalCandidates(target);
         int successfulCandidates = 0;
         boolean failedBeforeSuccess = false;
         boolean bestUsedFallback = false;
+        boolean targetFarAway = player.distanceTo(target) > FOLLOW_SPRINT_ENABLE_DISTANCE;
 
         for (BlockPos candidate : candidates) {
             PathPlanResult plan = pathPlanner.plan(client.world, player.getBlockPos(), candidate);
@@ -470,11 +478,21 @@ public class FollowBehavior {
                 continue;
             }
 
+            double initialTurn = initialRouteTurnDegrees(player, plan.path());
+            boolean awkwardShortRoute = plan.path().size() <= FOLLOW_SHORT_ROUTE_LENGTH
+                    && initialTurn >= FOLLOW_REVERSE_REJECT_YAW;
+            if (awkwardShortRoute && !targetFarAway) {
+                failedBeforeSuccess = true;
+                continue;
+            }
+
             successfulCandidates++;
-            if (bestPlan == null || plan.length() < bestPlan.length()) {
+            double score = followPlanScore(player, target, plan, initialTurn, awkwardShortRoute);
+            if (bestPlan == null || score < bestScore) {
                 bestPlan = plan;
                 bestGoal = new FollowGoal(target, entityPosition(target), candidate);
                 bestUsedFallback = failedBeforeSuccess;
+                bestScore = score;
             }
         }
 
@@ -490,6 +508,39 @@ public class FollowBehavior {
         }
 
         return new FollowPlan(bestGoal, bestPlan);
+    }
+
+    private double followPlanScore(ClientPlayerEntity player, AbstractClientPlayerEntity target,
+                                   PathPlanResult plan, double initialTurn, boolean awkwardShortRoute) {
+        double score = plan.length() + initialTurn * FOLLOW_TURN_SCORE_WEIGHT;
+
+        if (player.distanceTo(target) <= FOLLOW_SPRINT_ENABLE_DISTANCE) {
+            score += initialTurn * FOLLOW_NEAR_TURN_SCORE_WEIGHT;
+        }
+
+        if (awkwardShortRoute) {
+            score += FOLLOW_SHORT_REVERSE_SCORE_PENALTY;
+        }
+
+        return score;
+    }
+
+    private double initialRouteTurnDegrees(ClientPlayerEntity player, List<BlockPos> plan) {
+        if (plan.isEmpty()) {
+            return 0.0;
+        }
+
+        int steeringIndex = plan.size() > 1 ? 1 : 0;
+        BlockPos steeringWaypoint = plan.get(steeringIndex);
+        double deltaX = steeringWaypoint.getX() + 0.5 - player.getX();
+        double deltaZ = steeringWaypoint.getZ() + 0.5 - player.getZ();
+
+        if (Math.sqrt(deltaX * deltaX + deltaZ * deltaZ) < 0.001) {
+            return 0.0;
+        }
+
+        float targetYaw = (float) (Math.toDegrees(Math.atan2(deltaZ, deltaX)) - 90.0);
+        return Math.abs(yawDelta(player.getYaw(), targetYaw));
     }
 
     private List<BlockPos> followGoalCandidates(AbstractClientPlayerEntity target) {
@@ -537,6 +588,25 @@ public class FollowBehavior {
         double deltaX = target.getX() + 0.5 - player.getX();
         double deltaZ = target.getZ() + 0.5 - player.getZ();
         return Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
+    }
+
+    private float yawDelta(float current, float target) {
+        float delta = normalizeYaw(target) - normalizeYaw(current);
+        return normalizeYaw(delta);
+    }
+
+    private float normalizeYaw(float degrees) {
+        float wrapped = degrees % 360.0f;
+
+        if (wrapped >= 180.0f) {
+            wrapped -= 360.0f;
+        }
+
+        if (wrapped < -180.0f) {
+            wrapped += 360.0f;
+        }
+
+        return wrapped;
     }
 
     private String goalLabel(BlockPos goal) {
