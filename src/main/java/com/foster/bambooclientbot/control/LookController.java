@@ -32,6 +32,7 @@ public class LookController {
     private int lastYawDeltaSign;
     private int lastPitchDeltaSign;
     private int lastAppliedYawDirection = 1;
+    private NavigationMotion lastNavigationMotion;
 
     public void beginTick() {
         lookRequestCount = 0;
@@ -72,19 +73,36 @@ public class LookController {
         float targetYaw = steeringAngles.yaw();
         Vec3d stabilizedGazeTarget = stabilizedNavigationGazeTarget(player, gazeTarget, targetYaw);
         Angles gazeAngles = absoluteAnglesTo(player, stabilizedGazeTarget);
-        float headYaw = approachYaw(normalizeYaw(player.getHeadYaw()), gazeAngles.yaw(), MAX_GAZE_YAW_DELTA);
+        float currentHeadYaw = normalizeYaw(player.getHeadYaw());
+        float requestedLookYawDelta = yawDelta(currentHeadYaw, gazeAngles.yaw());
+        float headYaw = approachYaw(currentHeadYaw, gazeAngles.yaw(), MAX_GAZE_YAW_DELTA);
         float pitch = approachAngle(player.getPitch(), gazeAngles.pitch(), MAX_GAZE_PITCH_DELTA);
         float appliedYawDelta = yawDelta(currentYaw, targetYaw);
+        float appliedLookYawDelta = yawDelta(currentHeadYaw, headYaw);
         float appliedPitchDelta = pitch - currentPitch;
 
         player.setYaw(targetYaw);
         player.setPitch(pitch);
         player.setHeadYaw(headYaw);
         player.setBodyYaw(targetYaw);
+        lastNavigationMotion = new NavigationMotion(
+                gazeSource,
+                targetYaw,
+                gazeAngles.yaw(),
+                requestedLookYawDelta,
+                appliedLookYawDelta,
+                appliedYawDelta,
+                steeringTarget,
+                gazeTarget
+        );
         logNavigationTarget(gazeSource, routeIndex, routeLength, emptyRouteFallback, gazeTarget);
         logRotationWrite("rotateForNavigation", currentYaw, currentPitch, targetYaw, gazeAngles.pitch(),
                 appliedYawDelta, appliedPitchDelta, player, player.getEyePos(), steeringTarget,
                 steeringAngles.rawYaw(), steeringAngles.yaw());
+    }
+
+    public NavigationMotion lastNavigationMotion() {
+        return lastNavigationMotion;
     }
 
     public void clearNavigationGaze() {
@@ -361,5 +379,11 @@ public class LookController {
     }
 
     private record Angles(float rawYaw, float yaw, float pitch) {
+    }
+
+    public record NavigationMotion(String lookSource, float steeringYaw, float lookYaw,
+                                   float requestedLookYawDelta, float appliedLookYawDelta,
+                                   float appliedSteeringYawDelta, Vec3d steeringTarget,
+                                   Vec3d lookTarget) {
     }
 }

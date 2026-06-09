@@ -168,9 +168,10 @@ public class FollowBehavior {
         Vec3d gazeTarget = canSeeTarget
                 ? lookController.upperBodyTarget(target)
                 : lookController.routePreviewGazeTarget(player, route(), routeIndex());
+        Vec3d steeringTarget = lookController.routeSteeringTarget(player, route(), routeIndex());
         lookController.rotateForNavigation(
                 player,
-                lookController.routeSteeringTarget(player, route(), routeIndex()),
+                steeringTarget,
                 gazeTarget,
                 gazeSource,
                 routeIndex(),
@@ -184,6 +185,8 @@ public class FollowBehavior {
                 movement.jumpWanted(),
                 routeIndex(),
                 routeLength());
+        movementDiagnostics.logMotionSpin("follow_route", client.options, player, waypoint, steeringTarget,
+                lookController.lastNavigationMotion(), routeIndex(), routeLength());
         logFollowDiagnostics(player, target, false);
         state.setActiveFollowRoute(
                 activeFollow.actionData(),

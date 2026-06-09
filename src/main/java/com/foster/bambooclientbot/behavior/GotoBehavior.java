@@ -111,6 +111,8 @@ public class GotoBehavior {
         movementController.applyRouteMovement(client.options, movement, "goto");
         movementDiagnostics.logMovement("goto", client.options, player, waypoint, waypoint.getY() - player.getY(),
                 false, activeGotoRouteIndex, activeGotoRoute.size());
+        movementDiagnostics.logMotionSpin("goto", client.options, player, waypoint, steeringTarget,
+                lookController.lastNavigationMotion(), activeGotoRouteIndex, activeGotoRoute.size());
     }
 
     public void start(MinecraftClient client, ActionRequest request, Runnable beforeActivate, Runnable stopMovement) {
