@@ -2,6 +2,7 @@ package com.foster.bambooclientbot.reflex;
 
 import com.foster.bambooclientbot.actions.ActionExecutor;
 import com.foster.bambooclientbot.inventory.FoodResolver;
+import com.foster.bambooclientbot.logging.BambooBotLog;
 import com.foster.bambooclientbot.state.BotState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
@@ -10,9 +11,10 @@ import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
 
 public class AutoEatReflex implements Reflex {
-    public static final int DEFAULT_HUNGER_THRESHOLD = 12;
+    public static final int DEFAULT_HUNGER_THRESHOLD = 19;
     public static final int DEFAULT_PREFERRED_HOTBAR_SLOT = 8;
 
+    private static final int FULL_HUNGER = 20;
     private static final long COOLDOWN_MILLIS = 5_000L;
     private static final int HOTBAR_START = 0;
     private static final int HOTBAR_END = 8;
@@ -23,6 +25,9 @@ public class AutoEatReflex implements Reflex {
     private final int hungerThreshold;
     private final int preferredHotbarSlot;
     private int previousSlot = -1;
+    private long failedAttemptCooldownUntilMillis;
+    private int lastLoggedHunger = -1;
+    private String lastLoggedResult = "";
 
     public AutoEatReflex() {
         this(DEFAULT_HUNGER_THRESHOLD, DEFAULT_PREFERRED_HOTBAR_SLOT);
@@ -49,7 +54,7 @@ public class AutoEatReflex implements Reflex {
             if (state.autoEatActive()) {
                 stopEating(client, state, actions, "hunger_ok");
             } else {
-                state.setLastAutoEatResult("hunger_ok");
+                recordResult(state, -1, "hunger_ok");
             }
             return;
         }
@@ -62,28 +67,30 @@ public class AutoEatReflex implements Reflex {
         }
 
         if (player.isDead() || !player.isAlive()) {
-            state.setLastAutoEatResult("hunger_ok");
+            recordResult(state, player.getHungerManager().getFoodLevel(), "hunger_ok");
             return;
         }
 
         if (isContainerOpen(client)) {
-            state.setLastAutoEatResult("container_open");
+            recordResult(state, player.getHungerManager().getFoodLevel(), "container_open");
             return;
         }
 
-        if (player.getHungerManager().getFoodLevel() > hungerThreshold) {
-            state.setLastAutoEatResult("hunger_ok");
+        int hunger = player.getHungerManager().getFoodLevel();
+
+        if (hunger > hungerThreshold) {
+            recordResult(state, hunger, "hunger_ok");
             return;
         }
 
         if (player.isUsingItem()) {
-            state.setLastAutoEatResult("already_eating");
+            recordResult(state, hunger, "already_eating");
             return;
         }
 
         long now = System.currentTimeMillis();
 
-        if (now - state.lastAutoEatTimeMillis() < COOLDOWN_MILLIS) {
+        if (now < failedAttemptCooldownUntilMillis) {
             return;
         }
 
@@ -94,12 +101,12 @@ public class AutoEatReflex implements Reflex {
         }
 
         if (foodSlot < 0) {
-            state.setLastAutoEatTimeMillis(now);
-            state.setLastAutoEatResult("no_food_found");
+            failedAttemptCooldownUntilMillis = now + COOLDOWN_MILLIS;
+            recordResult(state, hunger, "no_food_found");
             return;
         }
 
-        startEating(client, state, actions, player, foodSlot, now);
+        startEating(client, state, actions, player, foodSlot);
     }
 
     private void tickActiveEating(MinecraftClient client, BotState state, ActionExecutor actions, ClientPlayerEntity player) {
@@ -113,7 +120,9 @@ public class AutoEatReflex implements Reflex {
             return;
         }
 
-        if (player.getHungerManager().getFoodLevel() > hungerThreshold && !player.isUsingItem()) {
+        int hunger = player.getHungerManager().getFoodLevel();
+
+        if (hunger >= FULL_HUNGER) {
             stopEating(client, state, actions, "ate_food");
             return;
         }
@@ -127,14 +136,13 @@ public class AutoEatReflex implements Reflex {
     }
 
     private void startEating(MinecraftClient client, BotState state, ActionExecutor actions,
-                             ClientPlayerEntity player, int foodSlot, long now) {
+                             ClientPlayerEntity player, int foodSlot) {
         PlayerInventory inventory = player.getInventory();
         previousSlot = inventory.getSelectedSlot();
         actions.selectHotbarSlot(client, foodSlot);
         actions.setReflexUse(client, true, "auto_eat");
         state.setAutoEatActive(true);
-        state.setLastAutoEatTimeMillis(now);
-        state.setLastAutoEatResult("already_eating");
+        recordResult(state, player.getHungerManager().getFoodLevel(), "already_eating");
     }
 
     private void stopEating(MinecraftClient client, BotState state, ActionExecutor actions, String result) {
@@ -147,8 +155,8 @@ public class AutoEatReflex implements Reflex {
 
         previousSlot = -1;
         state.setAutoEatActive(false);
-        state.setLastAutoEatTimeMillis(System.currentTimeMillis());
-        state.setLastAutoEatResult(result);
+        int hunger = client == null || client.player == null ? -1 : client.player.getHungerManager().getFoodLevel();
+        recordResult(state, hunger, result);
     }
 
     private int findHotbarFoodSlot(PlayerInventory inventory) {
@@ -191,5 +199,18 @@ public class AutoEatReflex implements Reflex {
 
     private boolean isContainerOpen(MinecraftClient client) {
         return client.currentScreen instanceof HandledScreen<?> && !(client.currentScreen instanceof InventoryScreen);
+    }
+
+    private void recordResult(BotState state, int hunger, String result) {
+        state.setLastAutoEatTimeMillis(System.currentTimeMillis());
+        state.setLastAutoEatResult(result);
+
+        if (hunger == lastLoggedHunger && result.equals(lastLoggedResult)) {
+            return;
+        }
+
+        lastLoggedHunger = hunger;
+        lastLoggedResult = result;
+        BambooBotLog.info("AUTO_EAT hunger=" + hunger + " result=" + result);
     }
 }
