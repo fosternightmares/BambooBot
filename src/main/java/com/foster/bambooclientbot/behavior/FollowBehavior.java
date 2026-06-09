@@ -35,6 +35,7 @@ public class FollowBehavior {
     private static final int FOLLOW_GOAL_VERTICAL_SEARCH = 1;
     private static final int FOLLOW_REPLAN_TICKS = 10;
     private static final int FOLLOW_SHORT_ROUTE_LENGTH = 3;
+    private static final double FOLLOW_NEAR_REJECT_YAW = 85.0;
     private static final double FOLLOW_REVERSE_REJECT_YAW = 120.0;
     private static final double FOLLOW_TURN_SCORE_WEIGHT = 1.0 / 45.0;
     private static final double FOLLOW_NEAR_TURN_SCORE_WEIGHT = 1.0 / 20.0;
@@ -469,7 +470,9 @@ public class FollowBehavior {
         int successfulCandidates = 0;
         boolean failedBeforeSuccess = false;
         boolean bestUsedFallback = false;
-        boolean targetFarAway = player.distanceTo(target) > FOLLOW_SPRINT_ENABLE_DISTANCE;
+        double targetDistance = player.distanceTo(target);
+        boolean targetFarAway = targetDistance > FOLLOW_SPRINT_ENABLE_DISTANCE;
+        boolean nearFollowDistance = targetDistance <= FOLLOW_SPRINT_ENABLE_DISTANCE;
 
         for (BlockPos candidate : candidates) {
             PathPlanResult plan = pathPlanner.plan(client.world, player.getBlockPos(), candidate);
@@ -481,13 +484,16 @@ public class FollowBehavior {
             double initialTurn = initialRouteTurnDegrees(player, plan.path());
             boolean awkwardShortRoute = plan.path().size() <= FOLLOW_SHORT_ROUTE_LENGTH
                     && initialTurn >= FOLLOW_REVERSE_REJECT_YAW;
-            if (awkwardShortRoute && !targetFarAway) {
+            boolean nearAwkwardShortRoute = nearFollowDistance
+                    && plan.path().size() <= FOLLOW_SHORT_ROUTE_LENGTH
+                    && initialTurn > FOLLOW_NEAR_REJECT_YAW;
+            if ((awkwardShortRoute || nearAwkwardShortRoute) && !targetFarAway) {
                 failedBeforeSuccess = true;
                 continue;
             }
 
             successfulCandidates++;
-            double score = followPlanScore(player, target, plan, initialTurn, awkwardShortRoute);
+            double score = followPlanScore(targetDistance, plan, initialTurn, awkwardShortRoute);
             if (bestPlan == null || score < bestScore) {
                 bestPlan = plan;
                 bestGoal = new FollowGoal(target, entityPosition(target), candidate);
@@ -510,11 +516,11 @@ public class FollowBehavior {
         return new FollowPlan(bestGoal, bestPlan);
     }
 
-    private double followPlanScore(ClientPlayerEntity player, AbstractClientPlayerEntity target,
-                                   PathPlanResult plan, double initialTurn, boolean awkwardShortRoute) {
+    private double followPlanScore(double targetDistance, PathPlanResult plan, double initialTurn,
+                                   boolean awkwardShortRoute) {
         double score = plan.length() + initialTurn * FOLLOW_TURN_SCORE_WEIGHT;
 
-        if (player.distanceTo(target) <= FOLLOW_SPRINT_ENABLE_DISTANCE) {
+        if (targetDistance <= FOLLOW_SPRINT_ENABLE_DISTANCE) {
             score += initialTurn * FOLLOW_NEAR_TURN_SCORE_WEIGHT;
         }
 
