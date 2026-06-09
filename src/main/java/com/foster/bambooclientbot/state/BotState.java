@@ -46,6 +46,9 @@ public class BotState {
     private long lastSwingTimeMillis;
     private boolean autoUse;
     private boolean autoSneak;
+    private boolean autoEatActive;
+    private long lastAutoEatTimeMillis;
+    private String lastAutoEatResult = "hunger_ok";
 
     public void queueCommand(CommandRequest request) {
         pendingCommands.add(request);
@@ -297,5 +300,32 @@ public class BotState {
 
     public boolean autoSneak() {
         return autoSneak;
+    }
+
+    public void setAutoEatActive(boolean autoEatActive) {
+        this.autoEatActive = autoEatActive;
+    }
+
+    public boolean autoEatActive() {
+        return autoEatActive;
+    }
+
+    public void setLastAutoEatTimeMillis(long lastAutoEatTimeMillis) {
+        this.lastAutoEatTimeMillis = lastAutoEatTimeMillis;
+    }
+
+    public long lastAutoEatTimeMillis() {
+        return lastAutoEatTimeMillis;
+    }
+
+    public void setLastAutoEatResult(String lastAutoEatResult) {
+        this.lastAutoEatResult = lastAutoEatResult;
+    }
+
+    public String autoEatStatus() {
+        long ageMillis = lastAutoEatTimeMillis <= 0L ? 0L : Math.max(0L, System.currentTimeMillis() - lastAutoEatTimeMillis);
+        return "autoEatActive=" + autoEatActive
+                + " lastAutoEatAgeMs=" + ageMillis
+                + " lastAutoEatResult=" + lastAutoEatResult;
     }
 }

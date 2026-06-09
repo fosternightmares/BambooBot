@@ -13,6 +13,9 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.option.GameOptions;
+import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.screen.ScreenHandler;
+import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.util.Hand;
 
 public class ActionExecutor {
@@ -65,6 +68,45 @@ public class ActionExecutor {
         tickAutoSneak(client);
         tickAutoUse(client);
         tickAutoSwing(client);
+    }
+
+    public void setReflexUse(MinecraftClient client, boolean pressed, String source) {
+        if (client == null || client.options == null) {
+            return;
+        }
+
+        movementController.setUse(client.options, pressed, source);
+    }
+
+    public boolean selectHotbarSlot(MinecraftClient client, int hotbarSlot) {
+        if (client == null || client.player == null || !PlayerInventory.isValidHotbarIndex(hotbarSlot)) {
+            return false;
+        }
+
+        client.player.getInventory().setSelectedSlot(hotbarSlot);
+        return true;
+    }
+
+    public boolean swapInventorySlotWithHotbar(MinecraftClient client, int inventorySlot, int hotbarSlot) {
+        if (client == null || client.player == null || client.interactionManager == null
+                || !PlayerInventory.isValidHotbarIndex(hotbarSlot)) {
+            return false;
+        }
+
+        ScreenHandler handler = client.player.playerScreenHandler;
+
+        if (handler == null) {
+            return false;
+        }
+
+        client.interactionManager.clickSlot(
+                handler.syncId,
+                inventorySlot,
+                hotbarSlot,
+                SlotActionType.SWAP,
+                client.player
+        );
+        return true;
     }
 
     private void executeAction(MinecraftClient client, ActionRequest request) {
