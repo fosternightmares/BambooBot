@@ -124,7 +124,8 @@ public class FollowBehavior {
 
         tickReplan(client, player, target, state, activeFollow.actionData(), followStuckReplans,
                 movementRecovery.followStuckTicks(), movementDiagnostics);
-        if (consumePlannedSuccessfully()) {
+        boolean routeTransition = consumePlannedSuccessfully();
+        if (routeTransition) {
             movementRecovery.resetFollowRecovery();
             movementDiagnostics.setFollowRecovery("none");
             resetFollowStuckTracking();
@@ -176,7 +177,8 @@ public class FollowBehavior {
                 gazeSource,
                 routeIndex(),
                 routeLength(),
-                movementDiagnostics.followEmptyRouteFallback()
+                movementDiagnostics.followEmptyRouteFallback(),
+                routeTransition
         );
         RouteExecutor.RouteMovement movement = routeExecutor.followRouteMovement(player, waypoint, player.distanceTo(target),
                 client.options.sprintKey.isPressed());

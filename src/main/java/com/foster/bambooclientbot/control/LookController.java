@@ -16,6 +16,7 @@ public class LookController {
     private static final double MAX_GAZE_YAW_DELTA = 6.0;
     private static final double MAX_GAZE_PITCH_DELTA = 4.0;
     private static final double MIN_NAVIGATION_STEERING_DISTANCE = 0.35;
+    private static final double MAX_ROUTE_TRANSITION_STEERING_YAW_DELTA = 75.0;
     private static final float YAW_TIE_EPSILON = 0.01f;
 
     // Keep only diagnostic target history here; yaw/pitch remain Minecraft client state.
@@ -53,19 +54,33 @@ public class LookController {
     }
 
     public void rotateForNavigation(ClientPlayerEntity player, Vec3d steeringTarget, Vec3d gazeTarget) {
-        rotateForNavigation(player, steeringTarget, gazeTarget, "UNKNOWN", 0, 0, false);
+        rotateForNavigation(player, steeringTarget, gazeTarget, "UNKNOWN", 0, 0, false, false);
     }
 
     public void rotateForNavigation(ClientPlayerEntity player, Vec3d steeringTarget, Vec3d gazeTarget,
                                     String gazeSource, int routeIndex, int routeLength,
                                     boolean emptyRouteFallback) {
+        rotateForNavigation(player, steeringTarget, gazeTarget, gazeSource, routeIndex, routeLength,
+                emptyRouteFallback, false);
+    }
+
+    public void rotateForNavigation(ClientPlayerEntity player, Vec3d steeringTarget, Vec3d gazeTarget,
+                                    String gazeSource, int routeIndex, int routeLength,
+                                    boolean emptyRouteFallback, boolean routeTransition) {
         recordLookRequest("navigation");
         float currentYaw = normalizeYaw(player.getYaw());
         float currentPitch = player.getPitch();
         double steeringDistance = horizontalDistance(player, steeringTarget);
         Angles steeringAngles = absoluteAnglesTo(player, steeringTarget);
         boolean steeringYawHeld = steeringDistance < MIN_NAVIGATION_STEERING_DISTANCE;
-        float targetYaw = stableNavigationSteeringYaw(currentYaw, steeringAngles.yaw(), steeringYawHeld);
+        SteeringYaw steeringYaw = stableNavigationSteeringYaw(
+                currentYaw,
+                steeringAngles.yaw(),
+                steeringYawHeld,
+                routeTransition,
+                routeLength
+        );
+        float targetYaw = steeringYaw.yaw();
         Angles gazeAngles = absoluteAnglesTo(player, gazeTarget);
         float currentHeadYaw = normalizeYaw(player.getHeadYaw());
         float requestedLookYawDelta = yawDelta(currentHeadYaw, gazeAngles.yaw());
@@ -89,7 +104,9 @@ public class LookController {
                 steeringTarget,
                 gazeTarget,
                 steeringDistance,
-                steeringYawHeld
+                steeringYawHeld,
+                routeTransition,
+                steeringYaw.transitionSuppressed()
         );
         logNavigationTarget(gazeSource, routeIndex, routeLength, emptyRouteFallback, gazeTarget);
         logRotationWrite("rotateForNavigation", currentYaw, currentPitch, targetYaw, gazeAngles.pitch(),
@@ -231,15 +248,22 @@ public class LookController {
         return normalizeYaw(current + delta);
     }
 
-    private float stableNavigationSteeringYaw(float currentYaw, float absoluteTargetYaw, boolean holdPrevious) {
+    private SteeringYaw stableNavigationSteeringYaw(float currentYaw, float absoluteTargetYaw, boolean holdPrevious,
+                                                    boolean routeTransition, int routeLength) {
         float targetYaw = absoluteTargetYaw;
+        boolean transitionSuppressed = false;
 
         if (holdPrevious) {
             targetYaw = lastStableNavigationSteeringYaw == null ? currentYaw : lastStableNavigationSteeringYaw;
+        } else if (routeTransition && routeLength <= 2 && lastStableNavigationSteeringYaw != null
+                && Math.abs(yawDelta(lastStableNavigationSteeringYaw, absoluteTargetYaw))
+                > MAX_ROUTE_TRANSITION_STEERING_YAW_DELTA) {
+            targetYaw = lastStableNavigationSteeringYaw;
+            transitionSuppressed = true;
         }
 
         lastStableNavigationSteeringYaw = targetYaw;
-        return targetYaw;
+        return new SteeringYaw(targetYaw, transitionSuppressed);
     }
 
     private float yawDelta(float current, float target) {
@@ -355,10 +379,14 @@ public class LookController {
     private record Angles(float rawYaw, float yaw, float pitch) {
     }
 
+    private record SteeringYaw(float yaw, boolean transitionSuppressed) {
+    }
+
     public record NavigationMotion(String lookSource, float steeringYaw, float lookYaw,
                                    float requestedLookYawDelta, float appliedLookYawDelta,
                                    float appliedSteeringYawDelta, Vec3d steeringTarget,
                                    Vec3d lookTarget, double steeringDistance,
-                                   boolean steeringYawHeld) {
+                                   boolean steeringYawHeld, boolean routeTransition,
+                                   boolean transitionSteeringSuppressed) {
     }
 }

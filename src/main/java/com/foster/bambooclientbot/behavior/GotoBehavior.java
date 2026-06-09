@@ -36,6 +36,7 @@ public class GotoBehavior {
     private List<BlockPos> activeGotoRoute = List.of();
     private int activeGotoRouteIndex;
     private int gotoStuckReplans;
+    private boolean routeTransitionPending;
 
     public GotoBehavior(BotState state, PathPlanner pathPlanner, LookController lookController,
                         RouteExecutor routeExecutor, MovementRecovery movementRecovery,
@@ -76,6 +77,7 @@ public class GotoBehavior {
             activeGoto = null;
             activeGotoRoute = List.of();
             activeGotoRouteIndex = 0;
+            routeTransitionPending = false;
             lookController.clearNavigationGaze();
             return;
         }
@@ -91,6 +93,7 @@ public class GotoBehavior {
             return;
         }
 
+        boolean routeTransition = routeTransitionPending;
         Vec3d steeringTarget = lookController.routeSteeringTarget(player, activeGotoRoute, activeGotoRouteIndex);
         boolean finalTargetGaze = horizontalDistance <= GOTO_FINAL_GAZE_DISTANCE;
         Vec3d gazeTarget = finalTargetGaze
@@ -103,8 +106,10 @@ public class GotoBehavior {
                 finalTargetGaze ? "FINAL_TARGET" : "ROUTE_PREVIEW",
                 activeGotoRouteIndex,
                 activeGotoRoute.size(),
-                false
+                false,
+                routeTransition
         );
+        routeTransitionPending = false;
         routeExecutor.tickJumpCooldown();
         RouteExecutor.RouteMovement movement = routeExecutor.gotoRouteMovement(player, waypoint, horizontalDistance,
                 client.options.sprintKey.isPressed());
@@ -163,6 +168,7 @@ public class GotoBehavior {
         state.setFollowJump(false);
         activeGotoRoute = plan.path();
         activeGotoRouteIndex = activeGotoRoute.size() > 1 ? 1 : 0;
+        routeTransitionPending = true;
         lookController.rotateForNavigation(
                 client.player,
                 lookController.routeSteeringTarget(client.player, activeGotoRoute, activeGotoRouteIndex),
@@ -170,7 +176,8 @@ public class GotoBehavior {
                 "ROUTE_PREVIEW",
                 activeGotoRouteIndex,
                 activeGotoRoute.size(),
-                false
+                false,
+                true
         );
         resetStuckTracking();
         state.setActiveGoto(target, horizontalDistance, activeGotoRouteIndex, activeGotoRoute.size(), gotoStuckReplans,
@@ -182,6 +189,7 @@ public class GotoBehavior {
     public void cancel(String reason) {
         if (activeGoto == null) {
             state.clearActiveGoto();
+            routeTransitionPending = false;
             lookController.clearNavigationGaze();
             return;
         }
@@ -191,6 +199,7 @@ public class GotoBehavior {
         activeGoto = null;
         activeGotoRoute = List.of();
         activeGotoRouteIndex = 0;
+        routeTransitionPending = false;
         lookController.clearNavigationGaze();
         resetStuckTracking();
         state.clearActiveGoto();
@@ -238,6 +247,7 @@ public class GotoBehavior {
 
         activeGotoRoute = plan.path();
         activeGotoRouteIndex = activeGotoRoute.size() > 1 ? 1 : 0;
+        routeTransitionPending = true;
         resetStuckTracking();
         state.setActiveGoto(
                 target,
@@ -266,6 +276,7 @@ public class GotoBehavior {
         activeGoto = null;
         activeGotoRoute = List.of();
         activeGotoRouteIndex = 0;
+        routeTransitionPending = false;
         lookController.clearNavigationGaze();
         resetStuckTracking();
     }
