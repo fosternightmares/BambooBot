@@ -13,20 +13,13 @@ public class LookController {
     private static final int ROUTE_GAZE_PREVIEW_OFFSET = 3;
     private static final int ROUTE_STEERING_LOOKAHEAD_OFFSET = 2;
     private static final double ROUTE_STEERING_LOOKAHEAD_DISTANCE = 1.75;
-    private static final double GAZE_TARGET_TINY_MOVE_DISTANCE = 0.35;
-    private static final double GAZE_TARGET_MEANINGFUL_MOVE_DISTANCE = 1.25;
-    private static final long GAZE_TARGET_MIN_HOLD_MILLIS = 250L;
     private static final double MAX_GAZE_YAW_DELTA = 6.0;
     private static final double MAX_GAZE_PITCH_DELTA = 4.0;
-    private static final double MAX_NAVIGATION_TARGET_YAW_CHANGE = 40.0;
     private static final double MIN_NAVIGATION_STEERING_DISTANCE = 0.35;
     private static final float YAW_TIE_EPSILON = 0.01f;
 
-    // Store gaze intent as a world position; yaw/pitch remain Minecraft client state.
-    private Vec3d stableGazeTarget;
+    // Keep only diagnostic target history here; yaw/pitch remain Minecraft client state.
     private Vec3d previousNavigationGazeTarget;
-    private long lastGazeTargetUpdateMillis;
-    private Float lastNavigationSteeringYaw;
     private Float lastStableNavigationSteeringYaw;
     private int lookRequestCount;
     private boolean lookConflictLogged;
@@ -50,8 +43,6 @@ public class LookController {
         float appliedYawDelta = yawDelta(currentYaw, targetYaw);
         float appliedPitchDelta = angles.pitch() - currentPitch;
 
-        stableGazeTarget = targetPosition;
-        lastGazeTargetUpdateMillis = System.currentTimeMillis();
         player.setYaw(targetYaw);
         player.setPitch(angles.pitch());
         player.setHeadYaw(targetYaw);
@@ -75,8 +66,7 @@ public class LookController {
         Angles steeringAngles = absoluteAnglesTo(player, steeringTarget);
         boolean steeringYawHeld = steeringDistance < MIN_NAVIGATION_STEERING_DISTANCE;
         float targetYaw = stableNavigationSteeringYaw(currentYaw, steeringAngles.yaw(), steeringYawHeld);
-        Vec3d stabilizedGazeTarget = stabilizedNavigationGazeTarget(player, gazeTarget, targetYaw);
-        Angles gazeAngles = absoluteAnglesTo(player, stabilizedGazeTarget);
+        Angles gazeAngles = absoluteAnglesTo(player, gazeTarget);
         float currentHeadYaw = normalizeYaw(player.getHeadYaw());
         float requestedLookYawDelta = yawDelta(currentHeadYaw, gazeAngles.yaw());
         float headYaw = approachYaw(currentHeadYaw, gazeAngles.yaw(), MAX_GAZE_YAW_DELTA);
@@ -112,10 +102,7 @@ public class LookController {
     }
 
     public void clearNavigationGaze() {
-        stableGazeTarget = null;
         previousNavigationGazeTarget = null;
-        lastGazeTargetUpdateMillis = 0L;
-        lastNavigationSteeringYaw = null;
         lastStableNavigationSteeringYaw = null;
     }
 
@@ -206,43 +193,6 @@ public class LookController {
         double deltaX = target.x - player.getX();
         double deltaZ = target.z - player.getZ();
         return Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
-    }
-
-    private Vec3d stabilizedNavigationGazeTarget(ClientPlayerEntity player, Vec3d requestedTarget, float steeringYaw) {
-        long now = System.currentTimeMillis();
-
-        if (stableGazeTarget == null) {
-            stableGazeTarget = requestedTarget;
-            lastGazeTargetUpdateMillis = now;
-            lastNavigationSteeringYaw = steeringYaw;
-            return stableGazeTarget;
-        }
-
-        Angles requestedAngles = absoluteAnglesTo(player, requestedTarget);
-        Angles stableAngles = absoluteAnglesTo(player, stableGazeTarget);
-        double requestedYawChange = Math.abs(yawDelta(stableAngles.yaw(), requestedAngles.yaw()));
-        double steeringYawChange = lastNavigationSteeringYaw == null
-                ? 0.0
-                : Math.abs(yawDelta(lastNavigationSteeringYaw, steeringYaw));
-
-        if (requestedYawChange > MAX_NAVIGATION_TARGET_YAW_CHANGE
-                && steeringYawChange <= MAX_NAVIGATION_TARGET_YAW_CHANGE) {
-            lastNavigationSteeringYaw = steeringYaw;
-            return stableGazeTarget;
-        }
-
-        double squaredDistance = stableGazeTarget.squaredDistanceTo(requestedTarget);
-        double tinyMoveSquared = GAZE_TARGET_TINY_MOVE_DISTANCE * GAZE_TARGET_TINY_MOVE_DISTANCE;
-        double meaningfulMoveSquared = GAZE_TARGET_MEANINGFUL_MOVE_DISTANCE * GAZE_TARGET_MEANINGFUL_MOVE_DISTANCE;
-        boolean holdExpired = now - lastGazeTargetUpdateMillis >= GAZE_TARGET_MIN_HOLD_MILLIS;
-
-        if (squaredDistance >= meaningfulMoveSquared || (holdExpired && squaredDistance >= tinyMoveSquared)) {
-            stableGazeTarget = requestedTarget;
-            lastGazeTargetUpdateMillis = now;
-        }
-
-        lastNavigationSteeringYaw = steeringYaw;
-        return stableGazeTarget;
     }
 
     private Angles absoluteAnglesTo(ClientPlayerEntity player, Vec3d targetPosition) {
