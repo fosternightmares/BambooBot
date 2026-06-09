@@ -19,6 +19,8 @@ public class LookController {
     private static final double MAX_GAZE_YAW_DELTA = 6.0;
     private static final double MAX_GAZE_PITCH_DELTA = 4.0;
     private static final double MAX_NAVIGATION_TARGET_YAW_CHANGE = 40.0;
+    private static final float YAW_TIE_EPSILON = 0.01f;
+    private static final float YAW_OPPOSITE_EPSILON = 5.0f;
 
     private Vec3d stableGazeTarget;
     private long lastGazeTargetUpdateMillis;
@@ -28,6 +30,7 @@ public class LookController {
     private String lastWriteMethod = "none";
     private int lastYawDeltaSign;
     private int lastPitchDeltaSign;
+    private int lastAppliedYawDirection = 1;
 
     public void beginTick() {
         lookRequestCount = 0;
@@ -39,36 +42,38 @@ public class LookController {
         Angles angles = anglesTo(player, targetPosition);
         float currentYaw = player.getYaw();
         float currentPitch = player.getPitch();
-        float appliedYawDelta = wrapDegrees(angles.yaw() - currentYaw);
+        float targetYaw = yawTargetRelativeTo(currentYaw, angles.yaw());
+        float appliedYawDelta = yawDelta(currentYaw, targetYaw);
         float appliedPitchDelta = angles.pitch() - currentPitch;
 
         stableGazeTarget = targetPosition;
         lastGazeTargetUpdateMillis = System.currentTimeMillis();
-        player.setYaw(angles.yaw());
+        player.setYaw(targetYaw);
         player.setPitch(angles.pitch());
-        player.setHeadYaw(angles.yaw());
-        player.setBodyYaw(angles.yaw());
-        logRotationWrite("rotateToward", currentYaw, currentPitch, angles.yaw(), angles.pitch(),
+        player.setHeadYaw(targetYaw);
+        player.setBodyYaw(targetYaw);
+        logRotationWrite("rotateToward", currentYaw, currentPitch, targetYaw, angles.pitch(),
                 appliedYawDelta, appliedPitchDelta, player);
     }
 
     public void rotateForNavigation(ClientPlayerEntity player, Vec3d steeringTarget, Vec3d gazeTarget) {
         recordLookRequest("navigation");
         Angles steeringAngles = anglesTo(player, steeringTarget);
-        Vec3d stabilizedGazeTarget = stabilizedNavigationGazeTarget(player, gazeTarget, steeringAngles.yaw());
-        Angles gazeAngles = anglesTo(player, stabilizedGazeTarget);
         float currentYaw = player.getYaw();
         float currentPitch = player.getPitch();
-        float headYaw = approachAngle(player.getHeadYaw(), gazeAngles.yaw(), MAX_GAZE_YAW_DELTA);
+        float targetYaw = yawTargetRelativeTo(currentYaw, steeringAngles.yaw());
+        Vec3d stabilizedGazeTarget = stabilizedNavigationGazeTarget(player, gazeTarget, targetYaw);
+        Angles gazeAngles = anglesTo(player, stabilizedGazeTarget);
+        float headYaw = approachYaw(player.getHeadYaw(), gazeAngles.yaw(), MAX_GAZE_YAW_DELTA);
         float pitch = approachAngle(player.getPitch(), gazeAngles.pitch(), MAX_GAZE_PITCH_DELTA);
-        float appliedYawDelta = wrapDegrees(steeringAngles.yaw() - currentYaw);
+        float appliedYawDelta = yawDelta(currentYaw, targetYaw);
         float appliedPitchDelta = pitch - currentPitch;
 
-        player.setYaw(steeringAngles.yaw());
+        player.setYaw(targetYaw);
         player.setPitch(pitch);
         player.setHeadYaw(headYaw);
-        player.setBodyYaw(steeringAngles.yaw());
-        logRotationWrite("rotateForNavigation", currentYaw, currentPitch, steeringAngles.yaw(), gazeAngles.pitch(),
+        player.setBodyYaw(targetYaw);
+        logRotationWrite("rotateForNavigation", currentYaw, currentPitch, targetYaw, gazeAngles.pitch(),
                 appliedYawDelta, appliedPitchDelta, player);
     }
 
@@ -173,10 +178,10 @@ public class LookController {
 
         Angles requestedAngles = anglesTo(player, requestedTarget);
         Angles stableAngles = anglesTo(player, stableGazeTarget);
-        double requestedYawChange = Math.abs(wrapDegrees(requestedAngles.yaw() - stableAngles.yaw()));
+        double requestedYawChange = Math.abs(yawDelta(stableAngles.yaw(), requestedAngles.yaw()));
         double steeringYawChange = lastNavigationSteeringYaw == null
                 ? 0.0
-                : Math.abs(wrapDegrees(steeringYaw - lastNavigationSteeringYaw));
+                : Math.abs(yawDelta(lastNavigationSteeringYaw, steeringYaw));
 
         if (requestedYawChange > MAX_NAVIGATION_TARGET_YAW_CHANGE
                 && steeringYawChange <= MAX_NAVIGATION_TARGET_YAW_CHANGE) {
@@ -210,7 +215,7 @@ public class LookController {
     }
 
     private float approachAngle(float current, float target, double maxDelta) {
-        float delta = wrapDegrees(target - current);
+        float delta = target - current;
 
         if (delta > maxDelta) {
             delta = (float) maxDelta;
@@ -219,6 +224,39 @@ public class LookController {
         }
 
         return current + delta;
+    }
+
+    private float approachYaw(float current, float target, double maxDelta) {
+        float delta = yawDelta(current, target);
+
+        if (delta > maxDelta) {
+            delta = (float) maxDelta;
+        } else if (delta < -maxDelta) {
+            delta = (float) -maxDelta;
+        }
+
+        return current + delta;
+    }
+
+    private float yawTargetRelativeTo(float current, float target) {
+        return current + yawDelta(current, target);
+    }
+
+    private float yawDelta(float current, float target) {
+        float delta = wrapDegrees(target - current);
+
+        if (Math.abs(Math.abs(delta) - 180.0f) <= YAW_TIE_EPSILON) {
+            return 180.0f * lastAppliedYawDirection;
+        }
+
+        int deltaSign = sign(delta);
+        if (Math.abs(delta) >= 180.0f - YAW_OPPOSITE_EPSILON
+                && deltaSign != 0
+                && deltaSign != lastAppliedYawDirection) {
+            return Math.copySign(360.0f - Math.abs(delta), lastAppliedYawDirection);
+        }
+
+        return delta;
     }
 
     private float wrapDegrees(float degrees) {
@@ -274,6 +312,7 @@ public class LookController {
         lastWriteMethod = method;
         if (yawDeltaSign != 0) {
             lastYawDeltaSign = yawDeltaSign;
+            lastAppliedYawDirection = yawDeltaSign;
         }
         if (pitchDeltaSign != 0) {
             lastPitchDeltaSign = pitchDeltaSign;
