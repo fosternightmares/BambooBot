@@ -40,10 +40,10 @@ public class LookController {
 
     public void rotateToward(ClientPlayerEntity player, Vec3d targetPosition) {
         recordLookRequest("direct");
-        Angles angles = anglesTo(player, targetPosition);
+        Angles angles = absoluteAnglesTo(player, targetPosition);
         float currentYaw = normalizeYaw(player.getYaw());
         float currentPitch = player.getPitch();
-        float targetYaw = yawTargetRelativeTo(currentYaw, angles.yaw());
+        float targetYaw = angles.yaw();
         float appliedYawDelta = yawDelta(currentYaw, targetYaw);
         float appliedPitchDelta = angles.pitch() - currentPitch;
 
@@ -54,7 +54,8 @@ public class LookController {
         player.setHeadYaw(targetYaw);
         player.setBodyYaw(targetYaw);
         logRotationWrite("rotateToward", currentYaw, currentPitch, targetYaw, angles.pitch(),
-                appliedYawDelta, appliedPitchDelta, player);
+                appliedYawDelta, appliedPitchDelta, player, player.getEyePos(), targetPosition,
+                angles.rawYaw(), angles.yaw());
     }
 
     public void rotateForNavigation(ClientPlayerEntity player, Vec3d steeringTarget, Vec3d gazeTarget) {
@@ -65,12 +66,12 @@ public class LookController {
                                     String gazeSource, int routeIndex, int routeLength,
                                     boolean emptyRouteFallback) {
         recordLookRequest("navigation");
-        Angles steeringAngles = anglesTo(player, steeringTarget);
+        Angles steeringAngles = absoluteAnglesTo(player, steeringTarget);
         float currentYaw = normalizeYaw(player.getYaw());
         float currentPitch = player.getPitch();
-        float targetYaw = yawTargetRelativeTo(currentYaw, steeringAngles.yaw());
+        float targetYaw = steeringAngles.yaw();
         Vec3d stabilizedGazeTarget = stabilizedNavigationGazeTarget(player, gazeTarget, targetYaw);
-        Angles gazeAngles = anglesTo(player, stabilizedGazeTarget);
+        Angles gazeAngles = absoluteAnglesTo(player, stabilizedGazeTarget);
         float headYaw = approachYaw(normalizeYaw(player.getHeadYaw()), gazeAngles.yaw(), MAX_GAZE_YAW_DELTA);
         float pitch = approachAngle(player.getPitch(), gazeAngles.pitch(), MAX_GAZE_PITCH_DELTA);
         float appliedYawDelta = yawDelta(currentYaw, targetYaw);
@@ -82,7 +83,8 @@ public class LookController {
         player.setBodyYaw(targetYaw);
         logNavigationTarget(gazeSource, routeIndex, routeLength, emptyRouteFallback, gazeTarget);
         logRotationWrite("rotateForNavigation", currentYaw, currentPitch, targetYaw, gazeAngles.pitch(),
-                appliedYawDelta, appliedPitchDelta, player);
+                appliedYawDelta, appliedPitchDelta, player, player.getEyePos(), steeringTarget,
+                steeringAngles.rawYaw(), steeringAngles.yaw());
     }
 
     public void clearNavigationGaze() {
@@ -185,8 +187,8 @@ public class LookController {
             return stableGazeTarget;
         }
 
-        Angles requestedAngles = anglesTo(player, requestedTarget);
-        Angles stableAngles = anglesTo(player, stableGazeTarget);
+        Angles requestedAngles = absoluteAnglesTo(player, requestedTarget);
+        Angles stableAngles = absoluteAnglesTo(player, stableGazeTarget);
         double requestedYawChange = Math.abs(yawDelta(stableAngles.yaw(), requestedAngles.yaw()));
         double steeringYawChange = lastNavigationSteeringYaw == null
                 ? 0.0
@@ -212,15 +214,16 @@ public class LookController {
         return stableGazeTarget;
     }
 
-    private Angles anglesTo(ClientPlayerEntity player, Vec3d targetPosition) {
+    private Angles absoluteAnglesTo(ClientPlayerEntity player, Vec3d targetPosition) {
         Vec3d eyePosition = player.getEyePos();
         double deltaX = targetPosition.x - eyePosition.x;
         double deltaY = targetPosition.y - eyePosition.y;
         double deltaZ = targetPosition.z - eyePosition.z;
         double horizontalDistance = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
-        float yaw = (float) (Math.toDegrees(Math.atan2(deltaZ, deltaX)) - 90.0);
+        float rawYaw = (float) (Math.toDegrees(Math.atan2(deltaZ, deltaX)) - 90.0);
+        float yaw = normalizeYaw(rawYaw);
         float pitch = (float) -Math.toDegrees(Math.atan2(deltaY, horizontalDistance));
-        return new Angles(yaw, pitch);
+        return new Angles(rawYaw, yaw, pitch);
     }
 
     private float approachAngle(float current, float target, double maxDelta) {
@@ -245,10 +248,6 @@ public class LookController {
         }
 
         return normalizeYaw(current + delta);
-    }
-
-    private float yawTargetRelativeTo(float current, float target) {
-        return normalizeYaw(current + yawDelta(current, target));
     }
 
     private float yawDelta(float current, float target) {
@@ -308,7 +307,8 @@ public class LookController {
 
     private void logRotationWrite(String method, float currentYaw, float currentPitch, float targetYaw,
                                   float targetPitch, float appliedYawDelta, float appliedPitchDelta,
-                                  ClientPlayerEntity player) {
+                                  ClientPlayerEntity player, Vec3d playerPosition, Vec3d targetPosition,
+                                  float rawAbsoluteYaw, float normalizedAbsoluteYaw) {
         int yawDeltaSign = sign(appliedYawDelta);
         int pitchDeltaSign = sign(appliedPitchDelta);
         boolean yawSignFlip = lastYawDeltaSign != 0 && yawDeltaSign != 0 && yawDeltaSign != lastYawDeltaSign;
@@ -321,14 +321,19 @@ public class LookController {
         boolean bodyYawDiffers = Math.abs(yawDelta(player.getYaw(), player.getBodyYaw())) > 0.01f;
 
         BambooBotLog.info(String.format(Locale.ROOT,
-                "LOOK m=%s switch=%s cy=%.2f ncy=%.2f cp=%.2f ty=%.2f nty=%.2f tp=%.2f dy=%.2f dp=%.2f yflip=%s pflip=%s headDiff=%s bodyDiff=%s",
+                "LOOK m=%s switch=%s ppos=%s tpos=%s rawYaw=%.2f absYaw=%.2f cy=%.2f ncy=%.2f cp=%.2f ty=%.2f nty=%.2f ay=%.2f tp=%.2f dy=%.2f dp=%.2f yflip=%s pflip=%s headDiff=%s bodyDiff=%s",
                 method,
                 methodSwitch,
+                formatPosition(playerPosition),
+                formatPosition(targetPosition),
+                rawAbsoluteYaw,
+                normalizedAbsoluteYaw,
                 currentYaw,
                 normalizedCurrentYaw,
                 currentPitch,
                 targetYaw,
                 normalizedTargetYaw,
+                targetYaw,
                 targetPitch,
                 appliedYawDelta,
                 appliedPitchDelta,
@@ -355,6 +360,6 @@ public class LookController {
         return value > 0.0f ? 1 : -1;
     }
 
-    private record Angles(float yaw, float pitch) {
+    private record Angles(float rawYaw, float yaw, float pitch) {
     }
 }
