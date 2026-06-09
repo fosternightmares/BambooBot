@@ -139,13 +139,15 @@ public class MovementDiagnostics {
         }
 
         BambooBotLog.info(String.format(Locale.ROOT,
-                "SPIN m=%s cam=%.2f head=%.2f body=%.2f steerYaw=%.2f steerChange=%.2f lookYaw=%.2f lookChange=%.2f yawDisagree=%s keys=f:%s s:%s j:%s l:%s r:%s b:%s route=%d/%d routeFlip=%s shortRoute=%s shortRepeat=%d waypoint=%s steering=%s lookSrc=%s lookTarget=%s reqLookDy=%.2f appLookDy=%.2f appSteerDy=%.2f bigSteer=%s bigLook=%s",
+                "SPIN m=%s cam=%.2f head=%.2f body=%.2f steerYaw=%.2f steerChange=%.2f steerDist=%.2f steerHeld=%s lookYaw=%.2f lookChange=%.2f yawDisagree=%s keys=f:%s s:%s j:%s l:%s r:%s b:%s route=%d/%d routeFlip=%s shortRoute=%s shortRepeat=%d waypoint=%s steering=%s lookSrc=%s lookTarget=%s reqLookDy=%.2f appLookDy=%.2f appSteerDy=%.2f bigSteer=%s bigLook=%s",
                 movementMode,
                 player.getYaw(),
                 player.getHeadYaw(),
                 player.getBodyYaw(),
                 motion.steeringYaw(),
                 steeringChange,
+                motion.steeringDistance(),
+                motion.steeringYawHeld(),
                 motion.lookYaw(),
                 lookChange,
                 yawDisagreement,
