@@ -90,7 +90,7 @@ public class PlayerSensors {
         List<ThreatInfo> threats = state.threats();
 
         if (threats.isEmpty()) {
-            return "threatCount=0 nearest=none groups=none";
+            return "threatCount=0 underThreat=false nearest=none groups=none";
         }
 
         ThreatInfo nearest = threats.stream()
@@ -98,7 +98,9 @@ public class PlayerSensors {
                 .orElse(threats.get(0));
 
         return "threatCount=" + threats.size()
+                + " underThreat=" + state.underThreat()
                 + " nearest=" + nearest.name() + ":" + formatDistance(nearest.distance())
+                + targetingSummary(threats)
                 + " groups=" + threatGroups(threats);
     }
 
@@ -159,6 +161,31 @@ public class PlayerSensors {
         }
 
         return groups;
+    }
+
+    private String targetingSummary(List<ThreatInfo> threats) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+
+        for (ThreatInfo threat : threats) {
+            if (threat.targetingBot()) {
+                counts.put(threat.name(), counts.getOrDefault(threat.name(), 0) + 1);
+            }
+        }
+
+        if (counts.isEmpty()) {
+            return "";
+        }
+
+        String targeting = counts.entrySet().stream()
+                .limit(MAX_THREAT_GROUPS)
+                .map(entry -> entry.getKey() + (entry.getValue() > 1 ? "x" + entry.getValue() : ""))
+                .collect(Collectors.joining(","));
+
+        if (counts.size() > MAX_THREAT_GROUPS) {
+            targeting += ",...+" + (counts.size() - MAX_THREAT_GROUPS);
+        }
+
+        return " targeting=" + targeting;
     }
 
     private String formatDistance(double distance) {

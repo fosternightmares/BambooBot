@@ -10,6 +10,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.registry.Registries;
 
 public class ThreatSensors {
@@ -67,7 +68,7 @@ public class ThreatSensors {
                 continue;
             }
 
-            threats.add(new ThreatInfo(entityTypeName(entity), distance));
+            threats.add(new ThreatInfo(entityTypeName(entity), distance, isTargetingBot(entity, player)));
         }
 
         threats.sort(Comparator.comparingDouble(ThreatInfo::distance));
@@ -80,5 +81,13 @@ public class ThreatSensors {
 
     private String entityTypeName(Entity entity) {
         return Registries.ENTITY_TYPE.getId(entity.getType()).getPath();
+    }
+
+    private boolean isTargetingBot(Entity entity, ClientPlayerEntity player) {
+        if (!(entity instanceof MobEntity mob)) {
+            return false;
+        }
+
+        return mob.getTarget() == player;
     }
 }

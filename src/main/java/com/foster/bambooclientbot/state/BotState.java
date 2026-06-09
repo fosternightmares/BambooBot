@@ -390,6 +390,16 @@ public class BotState {
         return threats.size();
     }
 
+    public boolean underThreat() {
+        for (ThreatInfo threat : threats) {
+            if (threat.targetingBot()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private String safeValue(String value) {
         return value == null || value.isBlank() ? "none" : value;
     }
