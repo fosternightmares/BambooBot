@@ -4,6 +4,7 @@ import com.foster.bambooclientbot.actions.ActionRequest;
 import com.foster.bambooclientbot.commands.CommandRequest;
 import com.foster.bambooclientbot.logging.BambooBotLog;
 import java.util.ArrayDeque;
+import java.util.List;
 import java.util.Locale;
 import java.util.Queue;
 import java.util.UUID;
@@ -59,6 +60,7 @@ public class BotState {
     private String sourceEntity = "none";
     private String attackerEntity = "none";
     private UUID attackerUuid;
+    private List<ThreatInfo> threats = List.of();
 
     public void queueCommand(CommandRequest request) {
         pendingCommands.add(request);
@@ -374,6 +376,18 @@ public class BotState {
                 + " sourceEntity=" + sourceEntity
                 + " attackerEntity=" + attackerEntity
                 + " attackerUuid=" + (attackerUuid == null ? "none" : attackerUuid);
+    }
+
+    public void setThreats(List<ThreatInfo> threats) {
+        this.threats = threats == null ? List.of() : List.copyOf(threats);
+    }
+
+    public List<ThreatInfo> threats() {
+        return threats;
+    }
+
+    public int threatCount() {
+        return threats.size();
     }
 
     private String safeValue(String value) {

@@ -10,6 +10,7 @@ import com.foster.bambooclientbot.intent.IntentRequest;
 import com.foster.bambooclientbot.sensors.ContainerSensor;
 import com.foster.bambooclientbot.sensors.LookingAtBlockSensor;
 import com.foster.bambooclientbot.sensors.PlayerSensors;
+import com.foster.bambooclientbot.sensors.ThreatSensors;
 import com.foster.bambooclientbot.sensors.WorldSensors;
 import com.foster.bambooclientbot.state.BotState;
 import java.util.List;
@@ -30,11 +31,13 @@ public class BambooClientBot implements ClientModInitializer {
         ReflexBehavior reflexBehavior = new ReflexBehavior();
         ChatActionExecutor chatActionExecutor = new ChatActionExecutor(state);
         LookingAtBlockSensor lookingAtBlockSensor = new LookingAtBlockSensor();
+        ThreatSensors threatSensors = new ThreatSensors();
         ContainerSensor containerSensor = new ContainerSensor();
 
         ChatHandler.register(state);
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             lookingAtBlockSensor.update(client, state);
+            threatSensors.update(client, state);
             brainLoop.tick(client);
             List<IntentRequest> reflexRequests = reflexBehavior.collectIntents(client, state);
             IntentPlan intentPlan = brainLoop.arbitrateIntents(client, reflexRequests);
