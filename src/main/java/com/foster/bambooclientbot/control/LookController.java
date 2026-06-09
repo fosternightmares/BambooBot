@@ -18,9 +18,11 @@ public class LookController {
     private static final long GAZE_TARGET_MIN_HOLD_MILLIS = 250L;
     private static final double MAX_GAZE_YAW_DELTA = 6.0;
     private static final double MAX_GAZE_PITCH_DELTA = 4.0;
+    private static final double MAX_NAVIGATION_TARGET_YAW_CHANGE = 40.0;
 
     private Vec3d stableGazeTarget;
     private long lastGazeTargetUpdateMillis;
+    private Float lastNavigationSteeringYaw;
     private int lookRequestCount;
     private boolean lookConflictLogged;
     private String lastWriteMethod = "none";
@@ -53,7 +55,7 @@ public class LookController {
     public void rotateForNavigation(ClientPlayerEntity player, Vec3d steeringTarget, Vec3d gazeTarget) {
         recordLookRequest("navigation");
         Angles steeringAngles = anglesTo(player, steeringTarget);
-        Vec3d stabilizedGazeTarget = stabilizedGazeTarget(gazeTarget);
+        Vec3d stabilizedGazeTarget = stabilizedNavigationGazeTarget(player, gazeTarget, steeringAngles.yaw());
         Angles gazeAngles = anglesTo(player, stabilizedGazeTarget);
         float currentYaw = player.getYaw();
         float currentPitch = player.getPitch();
@@ -68,6 +70,12 @@ public class LookController {
         player.setBodyYaw(steeringAngles.yaw());
         logRotationWrite("rotateForNavigation", currentYaw, currentPitch, steeringAngles.yaw(), gazeAngles.pitch(),
                 appliedYawDelta, appliedPitchDelta, player);
+    }
+
+    public void clearNavigationGaze() {
+        stableGazeTarget = null;
+        lastGazeTargetUpdateMillis = 0L;
+        lastNavigationSteeringYaw = null;
     }
 
     public Vec3d routeLookTarget(ClientPlayerEntity player, List<BlockPos> route, int routeIndex) {
@@ -153,12 +161,26 @@ public class LookController {
         return Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
     }
 
-    private Vec3d stabilizedGazeTarget(Vec3d requestedTarget) {
+    private Vec3d stabilizedNavigationGazeTarget(ClientPlayerEntity player, Vec3d requestedTarget, float steeringYaw) {
         long now = System.currentTimeMillis();
 
         if (stableGazeTarget == null) {
             stableGazeTarget = requestedTarget;
             lastGazeTargetUpdateMillis = now;
+            lastNavigationSteeringYaw = steeringYaw;
+            return stableGazeTarget;
+        }
+
+        Angles requestedAngles = anglesTo(player, requestedTarget);
+        Angles stableAngles = anglesTo(player, stableGazeTarget);
+        double requestedYawChange = Math.abs(wrapDegrees(requestedAngles.yaw() - stableAngles.yaw()));
+        double steeringYawChange = lastNavigationSteeringYaw == null
+                ? 0.0
+                : Math.abs(wrapDegrees(steeringYaw - lastNavigationSteeringYaw));
+
+        if (requestedYawChange > MAX_NAVIGATION_TARGET_YAW_CHANGE
+                && steeringYawChange <= MAX_NAVIGATION_TARGET_YAW_CHANGE) {
+            lastNavigationSteeringYaw = steeringYaw;
             return stableGazeTarget;
         }
 
@@ -172,6 +194,7 @@ public class LookController {
             lastGazeTargetUpdateMillis = now;
         }
 
+        lastNavigationSteeringYaw = steeringYaw;
         return stableGazeTarget;
     }
 

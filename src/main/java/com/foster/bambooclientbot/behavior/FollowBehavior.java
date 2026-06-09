@@ -101,6 +101,7 @@ public class FollowBehavior {
             logFollowDiagnostics(player, target, true);
             movementController.clearRouteMovement(client.options, "follow_hold");
             state.setFollowJump(false);
+            lookController.clearNavigationGaze();
             clearActiveFollowRoute();
             return;
         }
@@ -148,6 +149,7 @@ public class FollowBehavior {
             logFollowDiagnostics(player, target, false);
             movementController.clearRouteMovement(client.options, "follow_empty_route");
             state.setFollowJump(false);
+            lookController.clearNavigationGaze();
             return;
         }
 
@@ -319,6 +321,7 @@ public class FollowBehavior {
         goal = null;
         replanTicks = 0;
         plannedSuccessfully = false;
+        lookController.clearNavigationGaze();
     }
 
     public String goalLabel() {

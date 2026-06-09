@@ -76,6 +76,7 @@ public class GotoBehavior {
             activeGoto = null;
             activeGotoRoute = List.of();
             activeGotoRouteIndex = 0;
+            lookController.clearNavigationGaze();
             return;
         }
 
@@ -166,6 +167,7 @@ public class GotoBehavior {
     public void cancel(String reason) {
         if (activeGoto == null) {
             state.clearActiveGoto();
+            lookController.clearNavigationGaze();
             return;
         }
 
@@ -174,6 +176,7 @@ public class GotoBehavior {
         activeGoto = null;
         activeGotoRoute = List.of();
         activeGotoRouteIndex = 0;
+        lookController.clearNavigationGaze();
         resetStuckTracking();
         state.clearActiveGoto();
     }
@@ -248,6 +251,7 @@ public class GotoBehavior {
         activeGoto = null;
         activeGotoRoute = List.of();
         activeGotoRouteIndex = 0;
+        lookController.clearNavigationGaze();
         resetStuckTracking();
     }
 
