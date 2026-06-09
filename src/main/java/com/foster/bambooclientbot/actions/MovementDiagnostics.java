@@ -64,6 +64,10 @@ public class MovementDiagnostics {
         return followSuccessfulCandidates;
     }
 
+    public boolean followEmptyRouteFallback() {
+        return followEmptyRouteFallback;
+    }
+
     public void clearFollowState() {
         followReplanReason = "none";
         followRecovery = "none";

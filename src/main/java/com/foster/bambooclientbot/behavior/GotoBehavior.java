@@ -92,10 +92,19 @@ public class GotoBehavior {
         }
 
         Vec3d steeringTarget = lookController.routeSteeringTarget(player, activeGotoRoute, activeGotoRouteIndex);
-        Vec3d gazeTarget = horizontalDistance <= GOTO_FINAL_GAZE_DISTANCE
+        boolean finalTargetGaze = horizontalDistance <= GOTO_FINAL_GAZE_DISTANCE;
+        Vec3d gazeTarget = finalTargetGaze
                 ? gotoGazeTarget(target)
                 : lookController.routePreviewGazeTarget(player, activeGotoRoute, activeGotoRouteIndex);
-        lookController.rotateForNavigation(player, steeringTarget, gazeTarget);
+        lookController.rotateForNavigation(
+                player,
+                steeringTarget,
+                gazeTarget,
+                finalTargetGaze ? "FINAL_TARGET" : "ROUTE_PREVIEW",
+                activeGotoRouteIndex,
+                activeGotoRoute.size(),
+                false
+        );
         routeExecutor.tickJumpCooldown();
         RouteExecutor.RouteMovement movement = routeExecutor.gotoRouteMovement(player, waypoint, horizontalDistance,
                 client.options.sprintKey.isPressed());
@@ -155,7 +164,11 @@ public class GotoBehavior {
         lookController.rotateForNavigation(
                 client.player,
                 lookController.routeSteeringTarget(client.player, activeGotoRoute, activeGotoRouteIndex),
-                lookController.routePreviewGazeTarget(client.player, activeGotoRoute, activeGotoRouteIndex)
+                lookController.routePreviewGazeTarget(client.player, activeGotoRoute, activeGotoRouteIndex),
+                "ROUTE_PREVIEW",
+                activeGotoRouteIndex,
+                activeGotoRoute.size(),
+                false
         );
         resetStuckTracking();
         state.setActiveGoto(target, horizontalDistance, activeGotoRouteIndex, activeGotoRoute.size(), gotoStuckReplans,

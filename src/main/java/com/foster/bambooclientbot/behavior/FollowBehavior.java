@@ -163,10 +163,20 @@ public class FollowBehavior {
             return;
         }
 
-        Vec3d gazeTarget = player.canSee(target)
+        boolean canSeeTarget = player.canSee(target);
+        String gazeSource = canSeeTarget ? "FOLLOW_PLAYER" : routeGazeSource();
+        Vec3d gazeTarget = canSeeTarget
                 ? lookController.upperBodyTarget(target)
                 : lookController.routePreviewGazeTarget(player, route(), routeIndex());
-        lookController.rotateForNavigation(player, lookController.routeSteeringTarget(player, route(), routeIndex()), gazeTarget);
+        lookController.rotateForNavigation(
+                player,
+                lookController.routeSteeringTarget(player, route(), routeIndex()),
+                gazeTarget,
+                gazeSource,
+                routeIndex(),
+                routeLength(),
+                movementDiagnostics.followEmptyRouteFallback()
+        );
         RouteExecutor.RouteMovement movement = routeExecutor.followRouteMovement(player, waypoint, player.distanceTo(target),
                 client.options.sprintKey.isPressed());
         movementController.applyRouteMovement(client.options, movement, "follow_route");
@@ -530,6 +540,10 @@ public class FollowBehavior {
         }
 
         return goal.getX() + "," + goal.getY() + "," + goal.getZ();
+    }
+
+    private String routeGazeSource() {
+        return movementDiagnostics.followEmptyRouteFallback() ? "ROUTE_FALLBACK" : "ROUTE_PREVIEW";
     }
 
     public record PlanStats(int candidateCount, int successfulCandidates, String selectedCandidate,

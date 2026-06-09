@@ -23,6 +23,7 @@ public class LookController {
 
     // Store gaze intent as a world position; yaw/pitch remain Minecraft client state.
     private Vec3d stableGazeTarget;
+    private Vec3d previousNavigationGazeTarget;
     private long lastGazeTargetUpdateMillis;
     private Float lastNavigationSteeringYaw;
     private int lookRequestCount;
@@ -57,6 +58,12 @@ public class LookController {
     }
 
     public void rotateForNavigation(ClientPlayerEntity player, Vec3d steeringTarget, Vec3d gazeTarget) {
+        rotateForNavigation(player, steeringTarget, gazeTarget, "UNKNOWN", 0, 0, false);
+    }
+
+    public void rotateForNavigation(ClientPlayerEntity player, Vec3d steeringTarget, Vec3d gazeTarget,
+                                    String gazeSource, int routeIndex, int routeLength,
+                                    boolean emptyRouteFallback) {
         recordLookRequest("navigation");
         Angles steeringAngles = anglesTo(player, steeringTarget);
         float currentYaw = normalizeYaw(player.getYaw());
@@ -73,12 +80,14 @@ public class LookController {
         player.setPitch(pitch);
         player.setHeadYaw(headYaw);
         player.setBodyYaw(targetYaw);
+        logNavigationTarget(gazeSource, routeIndex, routeLength, emptyRouteFallback, gazeTarget);
         logRotationWrite("rotateForNavigation", currentYaw, currentPitch, targetYaw, gazeAngles.pitch(),
                 appliedYawDelta, appliedPitchDelta, player);
     }
 
     public void clearNavigationGaze() {
         stableGazeTarget = null;
+        previousNavigationGazeTarget = null;
         lastGazeTargetUpdateMillis = 0L;
         lastNavigationSteeringYaw = null;
     }
@@ -274,6 +283,27 @@ public class LookController {
             lookConflictLogged = true;
             BambooBotLog.warn("LOOK_CONFLICT count=" + lookRequestCount + " source=" + source);
         }
+    }
+
+    private void logNavigationTarget(String gazeSource, int routeIndex, int routeLength, boolean emptyRouteFallback,
+                                     Vec3d targetPosition) {
+        BambooBotLog.info(String.format(Locale.ROOT,
+                "LOOK_TARGET src=%s route=%d/%d emptyRouteFallback=%s target=%s prev=%s",
+                gazeSource,
+                routeIndex,
+                routeLength,
+                emptyRouteFallback,
+                formatPosition(targetPosition),
+                formatPosition(previousNavigationGazeTarget)));
+        previousNavigationGazeTarget = targetPosition;
+    }
+
+    private String formatPosition(Vec3d position) {
+        if (position == null) {
+            return "none";
+        }
+
+        return String.format(Locale.ROOT, "%.2f,%.2f,%.2f", position.x, position.y, position.z);
     }
 
     private void logRotationWrite(String method, float currentYaw, float currentPitch, float targetYaw,
