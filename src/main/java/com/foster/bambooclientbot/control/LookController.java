@@ -2,6 +2,7 @@ package com.foster.bambooclientbot.control;
 
 import com.foster.bambooclientbot.logging.BambooBotLog;
 import java.util.List;
+import java.util.Locale;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.util.math.BlockPos;
@@ -22,6 +23,9 @@ public class LookController {
     private long lastGazeTargetUpdateMillis;
     private int lookRequestCount;
     private boolean lookConflictLogged;
+    private String lastWriteMethod = "none";
+    private int lastYawDeltaSign;
+    private int lastPitchDeltaSign;
 
     public void beginTick() {
         lookRequestCount = 0;
@@ -31,6 +35,10 @@ public class LookController {
     public void rotateToward(ClientPlayerEntity player, Vec3d targetPosition) {
         recordLookRequest("direct");
         Angles angles = anglesTo(player, targetPosition);
+        float currentYaw = player.getYaw();
+        float currentPitch = player.getPitch();
+        float appliedYawDelta = wrapDegrees(angles.yaw() - currentYaw);
+        float appliedPitchDelta = angles.pitch() - currentPitch;
 
         stableGazeTarget = targetPosition;
         lastGazeTargetUpdateMillis = System.currentTimeMillis();
@@ -38,6 +46,8 @@ public class LookController {
         player.setPitch(angles.pitch());
         player.setHeadYaw(angles.yaw());
         player.setBodyYaw(angles.yaw());
+        logRotationWrite("rotateToward", currentYaw, currentPitch, angles.yaw(), angles.pitch(),
+                appliedYawDelta, appliedPitchDelta, player);
     }
 
     public void rotateForNavigation(ClientPlayerEntity player, Vec3d steeringTarget, Vec3d gazeTarget) {
@@ -45,13 +55,19 @@ public class LookController {
         Angles steeringAngles = anglesTo(player, steeringTarget);
         Vec3d stabilizedGazeTarget = stabilizedGazeTarget(gazeTarget);
         Angles gazeAngles = anglesTo(player, stabilizedGazeTarget);
+        float currentYaw = player.getYaw();
+        float currentPitch = player.getPitch();
         float headYaw = approachAngle(player.getHeadYaw(), gazeAngles.yaw(), MAX_GAZE_YAW_DELTA);
         float pitch = approachAngle(player.getPitch(), gazeAngles.pitch(), MAX_GAZE_PITCH_DELTA);
+        float appliedYawDelta = wrapDegrees(steeringAngles.yaw() - currentYaw);
+        float appliedPitchDelta = pitch - currentPitch;
 
         player.setYaw(steeringAngles.yaw());
         player.setPitch(pitch);
         player.setHeadYaw(headYaw);
         player.setBodyYaw(steeringAngles.yaw());
+        logRotationWrite("rotateForNavigation", currentYaw, currentPitch, steeringAngles.yaw(), gazeAngles.pitch(),
+                appliedYawDelta, appliedPitchDelta, player);
     }
 
     public Vec3d routeLookTarget(ClientPlayerEntity player, List<BlockPos> route, int routeIndex) {
@@ -203,6 +219,50 @@ public class LookController {
             lookConflictLogged = true;
             BambooBotLog.warn("LOOK_CONFLICT count=" + lookRequestCount + " source=" + source);
         }
+    }
+
+    private void logRotationWrite(String method, float currentYaw, float currentPitch, float targetYaw,
+                                  float targetPitch, float appliedYawDelta, float appliedPitchDelta,
+                                  ClientPlayerEntity player) {
+        int yawDeltaSign = sign(appliedYawDelta);
+        int pitchDeltaSign = sign(appliedPitchDelta);
+        boolean yawSignFlip = lastYawDeltaSign != 0 && yawDeltaSign != 0 && yawDeltaSign != lastYawDeltaSign;
+        boolean pitchSignFlip = lastPitchDeltaSign != 0 && pitchDeltaSign != 0
+                && pitchDeltaSign != lastPitchDeltaSign;
+        boolean methodSwitch = !lastWriteMethod.equals("none") && !lastWriteMethod.equals(method);
+        boolean headYawDiffers = Math.abs(wrapDegrees(player.getHeadYaw() - player.getYaw())) > 0.01f;
+        boolean bodyYawDiffers = Math.abs(wrapDegrees(player.getBodyYaw() - player.getYaw())) > 0.01f;
+
+        BambooBotLog.info(String.format(Locale.ROOT,
+                "LOOK m=%s switch=%s cy=%.2f cp=%.2f ty=%.2f tp=%.2f dy=%.2f dp=%.2f yflip=%s pflip=%s headDiff=%s bodyDiff=%s",
+                method,
+                methodSwitch,
+                currentYaw,
+                currentPitch,
+                targetYaw,
+                targetPitch,
+                appliedYawDelta,
+                appliedPitchDelta,
+                yawSignFlip,
+                pitchSignFlip,
+                headYawDiffers,
+                bodyYawDiffers));
+
+        lastWriteMethod = method;
+        if (yawDeltaSign != 0) {
+            lastYawDeltaSign = yawDeltaSign;
+        }
+        if (pitchDeltaSign != 0) {
+            lastPitchDeltaSign = pitchDeltaSign;
+        }
+    }
+
+    private int sign(float value) {
+        if (Math.abs(value) < 0.01f) {
+            return 0;
+        }
+
+        return value > 0.0f ? 1 : -1;
     }
 
     private record Angles(float yaw, float pitch) {
