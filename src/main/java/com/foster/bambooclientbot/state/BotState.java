@@ -3,7 +3,6 @@ package com.foster.bambooclientbot.state;
 import com.foster.bambooclientbot.actions.ActionRequest;
 import com.foster.bambooclientbot.commands.CommandRequest;
 import java.util.ArrayDeque;
-import java.util.Locale;
 import java.util.Queue;
 
 /*
@@ -50,12 +49,6 @@ public class BotState {
     private boolean autoEatActive;
     private long lastAutoEatTimeMillis;
     private String lastAutoEatResult = "hunger_ok";
-    private float currentHealth = -1.0f;
-    private float previousHealth = -1.0f;
-    private boolean recentlyDamaged;
-    private long lastDamageTimeMillis;
-    private float lastDamageHealth = -1.0f;
-    private float damageAmount;
 
     public void queueCommand(CommandRequest request) {
         pendingCommands.add(request);
@@ -334,38 +327,5 @@ public class BotState {
         return "autoEatActive=" + autoEatActive
                 + " lastAutoEatAgeMs=" + ageMillis
                 + " lastAutoEatResult=" + lastAutoEatResult;
-    }
-
-    public void observeHealth(float observedHealth) {
-        float lastObservedHealth = currentHealth;
-
-        previousHealth = lastObservedHealth < 0.0f ? observedHealth : lastObservedHealth;
-        currentHealth = observedHealth;
-
-        if (lastObservedHealth >= 0.0f && observedHealth < lastObservedHealth) {
-            recentlyDamaged = true;
-            lastDamageTimeMillis = System.currentTimeMillis();
-            lastDamageHealth = observedHealth;
-            damageAmount = lastObservedHealth - observedHealth;
-        }
-    }
-
-    public String damageStatus() {
-        long ageMillis = lastDamageTimeMillis <= 0L ? 0L : Math.max(0L, System.currentTimeMillis() - lastDamageTimeMillis);
-        return "currentHealth=" + formatHealth(currentHealth)
-                + " previousHealth=" + formatHealth(previousHealth)
-                + " recentlyDamaged=" + recentlyDamaged
-                + " lastDamageTimeMs=" + lastDamageTimeMillis
-                + " lastDamageAgeMs=" + ageMillis
-                + " lastDamageHealth=" + formatHealth(lastDamageHealth)
-                + " damageAmount=" + formatHealth(damageAmount);
-    }
-
-    private String formatHealth(float health) {
-        if (health < 0.0f) {
-            return "unknown";
-        }
-
-        return String.format(Locale.ROOT, "%.1f", health);
     }
 }
