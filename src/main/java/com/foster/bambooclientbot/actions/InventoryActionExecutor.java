@@ -1,6 +1,7 @@
 package com.foster.bambooclientbot.actions;
 
 import com.foster.bambooclientbot.commands.ItemResolver;
+import com.foster.bambooclientbot.control.LookController;
 import com.foster.bambooclientbot.state.BotState;
 import com.foster.bambooclientbot.state.DropResult;
 import com.foster.bambooclientbot.state.InventorySnapshot;

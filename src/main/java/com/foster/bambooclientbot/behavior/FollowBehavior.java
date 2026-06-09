@@ -1,5 +1,11 @@
-package com.foster.bambooclientbot.actions;
+package com.foster.bambooclientbot.behavior;
 
+import com.foster.bambooclientbot.actions.ActionRequest;
+import com.foster.bambooclientbot.actions.MovementDiagnostics;
+import com.foster.bambooclientbot.actions.RouteExecutor;
+import com.foster.bambooclientbot.control.LookController;
+import com.foster.bambooclientbot.control.MovementController;
+import com.foster.bambooclientbot.control.MovementRecovery;
 import com.foster.bambooclientbot.navigation.PathPlanResult;
 import com.foster.bambooclientbot.navigation.PathPlanner;
 import com.foster.bambooclientbot.state.BotState;
@@ -14,7 +20,7 @@ import net.minecraft.client.option.GameOptions;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 
-class FollowController {
+public class FollowBehavior {
     private static final double FOLLOW_DISTANCE = 3.0;
     private static final double FOLLOW_SPRINT_ENABLE_DISTANCE = 6.0;
     private static final boolean FOLLOW_DIRECT_CHASE_ENABLED = false;
@@ -43,9 +49,9 @@ class FollowController {
     private int replanTicks;
     private boolean plannedSuccessfully;
 
-    FollowController(BotState state, PathPlanner pathPlanner, LookController lookController,
-                     RouteExecutor routeExecutor, MovementRecovery movementRecovery,
-                     MovementController movementController, MovementDiagnostics movementDiagnostics) {
+    public FollowBehavior(BotState state, PathPlanner pathPlanner, LookController lookController,
+                          RouteExecutor routeExecutor, MovementRecovery movementRecovery,
+                          MovementController movementController, MovementDiagnostics movementDiagnostics) {
         this.state = state;
         this.pathPlanner = pathPlanner;
         this.lookController = lookController;
@@ -55,8 +61,8 @@ class FollowController {
         this.movementDiagnostics = movementDiagnostics;
     }
 
-    void tick(MinecraftClient client, Consumer<MinecraftClient> stopMovement,
-              BiFunction<ClientPlayerEntity, String, AbstractClientPlayerEntity> targetFinder) {
+    public void tick(MinecraftClient client, Consumer<MinecraftClient> stopMovement,
+                     BiFunction<ClientPlayerEntity, String, AbstractClientPlayerEntity> targetFinder) {
         if (activeFollow == null) {
             return;
         }
@@ -177,8 +183,8 @@ class FollowController {
         );
     }
 
-    void startFollow(MinecraftClient client, ActionRequest request, Runnable cancelConflictingMovement,
-                     BiFunction<ClientPlayerEntity, String, AbstractClientPlayerEntity> targetFinder) {
+    public void startFollow(MinecraftClient client, ActionRequest request, Runnable cancelConflictingMovement,
+                            BiFunction<ClientPlayerEntity, String, AbstractClientPlayerEntity> targetFinder) {
         if (client == null || client.player == null || client.world == null || client.options == null) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
             state.queueChatMessage("action failed");
@@ -210,19 +216,19 @@ class FollowController {
         state.queueChatMessage("following " + request.actionData());
     }
 
-    void cancelActiveFollow() {
+    public void cancelActiveFollow() {
         activeFollow = null;
         clearActiveFollowRoute();
     }
 
-    void start(MinecraftClient client, ClientPlayerEntity player, AbstractClientPlayerEntity target,
+    public void start(MinecraftClient client, ClientPlayerEntity player, AbstractClientPlayerEntity target,
                String targetName, int replans, int stuckTicks) {
         replanTicks = 0;
         movementDiagnostics.setFollowReplanReason("start");
         planRoute(client, player, target, state, targetName, replans, stuckTicks, movementDiagnostics);
     }
 
-    void tickReplan(MinecraftClient client, ClientPlayerEntity player, AbstractClientPlayerEntity target,
+    public void tickReplan(MinecraftClient client, ClientPlayerEntity player, AbstractClientPlayerEntity target,
                     BotState state, String targetName, int replans, int stuckTicks,
                     MovementDiagnostics diagnostics) {
         if (replanTicks > 0) {
@@ -237,7 +243,7 @@ class FollowController {
         }
     }
 
-    void planRoute(MinecraftClient client, ClientPlayerEntity player, AbstractClientPlayerEntity target,
+    public void planRoute(MinecraftClient client, ClientPlayerEntity player, AbstractClientPlayerEntity target,
                    BotState state, String targetName, int replans, int stuckTicks,
                    MovementDiagnostics diagnostics) {
         if (client.world == null) {
@@ -265,33 +271,33 @@ class FollowController {
         state.setActiveFollowRoute(targetName, routeIndex, route.size(), "success", replans, stuckTicks);
     }
 
-    boolean consumePlannedSuccessfully() {
+    public boolean consumePlannedSuccessfully() {
         boolean result = plannedSuccessfully;
         plannedSuccessfully = false;
         return result;
     }
 
-    boolean isRouteEmpty() {
+    public boolean isRouteEmpty() {
         return route.isEmpty();
     }
 
-    BlockPos waypoint() {
+    public BlockPos waypoint() {
         return route.get(routeIndex);
     }
 
-    int routeIndex() {
+    public int routeIndex() {
         return routeIndex;
     }
 
-    int routeLength() {
+    public int routeLength() {
         return route.size();
     }
 
-    List<BlockPos> route() {
+    public List<BlockPos> route() {
         return route;
     }
 
-    boolean advanceRouteIndex(ClientPlayerEntity player) {
+    public boolean advanceRouteIndex(ClientPlayerEntity player) {
         int previousRouteIndex = routeIndex;
 
         while (routeIndex < route.size() - 1
@@ -302,12 +308,12 @@ class FollowController {
         return routeIndex != previousRouteIndex;
     }
 
-    void clear(BotState state) {
+    public void clear(BotState state) {
         clearLocal();
         state.clearActiveFollowRoute();
     }
 
-    void clearLocal() {
+    public void clearLocal() {
         route = List.of();
         routeIndex = 0;
         goal = null;
@@ -315,7 +321,7 @@ class FollowController {
         plannedSuccessfully = false;
     }
 
-    String goalLabel() {
+    public String goalLabel() {
         return goal == null ? "none" : goalLabel(goal.routeGoal());
     }
 
@@ -523,8 +529,8 @@ class FollowController {
         return goal.getX() + "," + goal.getY() + "," + goal.getZ();
     }
 
-    record PlanStats(int candidateCount, int successfulCandidates, String selectedCandidate,
-                     boolean emptyRouteFallback) {
+    public record PlanStats(int candidateCount, int successfulCandidates, String selectedCandidate,
+                            boolean emptyRouteFallback) {
     }
 
     private record FollowGoal(AbstractClientPlayerEntity target, Vec3d targetPosition, BlockPos routeGoal) {

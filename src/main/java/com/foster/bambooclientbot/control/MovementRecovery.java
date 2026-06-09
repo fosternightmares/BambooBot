@@ -1,11 +1,12 @@
-package com.foster.bambooclientbot.actions;
+package com.foster.bambooclientbot.control;
 
+import com.foster.bambooclientbot.actions.MovementDiagnostics;
 import com.foster.bambooclientbot.state.BotState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerEntity;
 
-class MovementRecovery {
+public class MovementRecovery {
     private static final int FOLLOW_EMPTY_ROUTE_RECOVERY_TICKS = 3;
     private static final int FOLLOW_FORWARD_NUDGE_TICKS = 8;
     private static final double ROUTE_PROGRESS_EPSILON = 0.15;
@@ -20,13 +21,13 @@ class MovementRecovery {
     private int followEmptyRouteTicks;
     private int followForwardNudgeTicks;
 
-    MovementRecovery(BotState state, LookController lookController, MovementController movementController) {
+    public MovementRecovery(BotState state, LookController lookController, MovementController movementController) {
         this.state = state;
         this.lookController = lookController;
         this.movementController = movementController;
     }
 
-    boolean tickFollowEmptyRouteRecovery(MinecraftClient client, ClientPlayerEntity player,
+    public boolean tickFollowEmptyRouteRecovery(MinecraftClient client, ClientPlayerEntity player,
                                          AbstractClientPlayerEntity target, MovementDiagnostics diagnostics,
                                          Runnable retryRoutePlanning, String goalLabel, int routeIndex,
                                          int routeLength, double followDistance) {
@@ -63,16 +64,16 @@ class MovementRecovery {
         return true;
     }
 
-    void resetFollowRecovery() {
+    public void resetFollowRecovery() {
         followEmptyRouteTicks = 0;
         followForwardNudgeTicks = 0;
     }
 
-    boolean followRecoveryActive() {
+    public boolean followRecoveryActive() {
         return followForwardNudgeTicks > 0;
     }
 
-    boolean recordRouteProgress(double waypointDistance, boolean followRoute) {
+    public boolean recordRouteProgress(double waypointDistance, boolean followRoute) {
         if (followRoute) {
             if (waypointDistance + ROUTE_PROGRESS_EPSILON < bestFollowWaypointDistance) {
                 bestFollowWaypointDistance = waypointDistance;
@@ -94,21 +95,21 @@ class MovementRecovery {
         return false;
     }
 
-    void resetFollowStuckTracking() {
+    public void resetFollowStuckTracking() {
         bestFollowWaypointDistance = Double.POSITIVE_INFINITY;
         followStuckTicks = 0;
     }
 
-    void resetGotoStuckTracking() {
+    public void resetGotoStuckTracking() {
         bestGotoWaypointDistance = Double.POSITIVE_INFINITY;
         gotoStuckTicks = 0;
     }
 
-    int followStuckTicks() {
+    public int followStuckTicks() {
         return followStuckTicks;
     }
 
-    int gotoStuckTicks() {
+    public int gotoStuckTicks() {
         return gotoStuckTicks;
     }
 

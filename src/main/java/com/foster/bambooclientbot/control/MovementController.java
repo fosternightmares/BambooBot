@@ -1,19 +1,21 @@
-package com.foster.bambooclientbot.actions;
+package com.foster.bambooclientbot.control;
 
+import com.foster.bambooclientbot.actions.ActionRequest;
+import com.foster.bambooclientbot.actions.RouteExecutor;
 import com.foster.bambooclientbot.logging.BambooBotLog;
 import net.minecraft.client.option.GameOptions;
 import net.minecraft.client.option.KeyBinding;
 
-class MovementController {
+public class MovementController {
     private int requestCount;
     private boolean conflictLogged;
 
-    void beginTick() {
+    public void beginTick() {
         requestCount = 0;
         conflictLogged = false;
     }
 
-    void applyRouteMovement(GameOptions options, RouteExecutor.RouteMovement movement, String source) {
+    public void applyRouteMovement(GameOptions options, RouteExecutor.RouteMovement movement, String source) {
         recordRequest(source);
         clearDirectionalKeysRaw(options);
         options.forwardKey.setPressed(true);
@@ -21,7 +23,7 @@ class MovementController {
         options.sprintKey.setPressed(movement.sprintPressed());
     }
 
-    void applyFollowDirect(GameOptions options, boolean sprintPressed, boolean jumpPressed) {
+    public void applyFollowDirect(GameOptions options, boolean sprintPressed, boolean jumpPressed) {
         recordRequest("follow_direct");
         clearDirectionalKeysRaw(options);
         options.forwardKey.setPressed(true);
@@ -29,7 +31,7 @@ class MovementController {
         options.jumpKey.setPressed(jumpPressed);
     }
 
-    void applyForwardNudge(GameOptions options) {
+    public void applyForwardNudge(GameOptions options) {
         recordRequest("forward_nudge");
         clearDirectionalKeysRaw(options);
         options.forwardKey.setPressed(true);
@@ -37,12 +39,12 @@ class MovementController {
         options.sprintKey.setPressed(false);
     }
 
-    void pressForward(GameOptions options, String source) {
+    public void pressForward(GameOptions options, String source) {
         recordRequest(source);
         options.forwardKey.setPressed(true);
     }
 
-    void applyManualMovement(GameOptions options, ActionRequest.ActionType actionType) {
+    public void applyManualMovement(GameOptions options, ActionRequest.ActionType actionType) {
         recordRequest("manual_" + actionType.name().toLowerCase());
         clearDirectionalKeysRaw(options);
         options.jumpKey.setPressed(false);
@@ -50,14 +52,14 @@ class MovementController {
         movementKey(options, actionType).setPressed(true);
     }
 
-    void clearRouteMovement(GameOptions options, String source) {
+    public void clearRouteMovement(GameOptions options, String source) {
         recordRequest(source);
         clearDirectionalKeysRaw(options);
         options.jumpKey.setPressed(false);
         options.sprintKey.setPressed(false);
     }
 
-    void stopAll(GameOptions options) {
+    public void stopAll(GameOptions options) {
         recordRequest("stop_all");
         clearDirectionalKeysRaw(options);
         options.jumpKey.setPressed(false);
@@ -67,12 +69,12 @@ class MovementController {
         options.useKey.setPressed(false);
     }
 
-    void setUse(GameOptions options, boolean pressed, String source) {
+    public void setUse(GameOptions options, boolean pressed, String source) {
         recordRequest(source);
         options.useKey.setPressed(pressed);
     }
 
-    void setSneak(GameOptions options, boolean pressed, String source) {
+    public void setSneak(GameOptions options, boolean pressed, String source) {
         recordRequest(source);
         options.sneakKey.setPressed(pressed);
     }

@@ -1,5 +1,7 @@
-package com.foster.bambooclientbot.actions;
+package com.foster.bambooclientbot.control;
 
+import com.foster.bambooclientbot.actions.ActionRequest;
+import com.foster.bambooclientbot.actions.RouteExecutor;
 import com.foster.bambooclientbot.state.BotState;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -7,7 +9,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerEntity;
 
-class SimpleMovementController {
+public class SimpleMovementController {
     private static final double APPROACH_TARGET_DISTANCE = 2.5;
 
     private final BotState state;
@@ -18,15 +20,15 @@ class SimpleMovementController {
     private int timedMovementTicksRemaining;
     private ActionRequest activeApproach;
 
-    SimpleMovementController(BotState state, LookController lookController, RouteExecutor routeExecutor,
-                             MovementController movementController) {
+    public SimpleMovementController(BotState state, LookController lookController, RouteExecutor routeExecutor,
+                                    MovementController movementController) {
         this.state = state;
         this.lookController = lookController;
         this.routeExecutor = routeExecutor;
         this.movementController = movementController;
     }
 
-    void tickApproach(MinecraftClient client, Consumer<MinecraftClient> stopMovement,
+    public void tickApproach(MinecraftClient client, Consumer<MinecraftClient> stopMovement,
                       BiFunction<ClientPlayerEntity, String, AbstractClientPlayerEntity> targetFinder) {
         if (activeApproach == null) {
             return;
@@ -63,7 +65,7 @@ class SimpleMovementController {
         movementController.pressForward(client.options, "approach_tick");
     }
 
-    void tickTimedMovement(MinecraftClient client, Consumer<MinecraftClient> stopMovement) {
+    public void tickTimedMovement(MinecraftClient client, Consumer<MinecraftClient> stopMovement) {
         if (timedMovement == null) {
             return;
         }
@@ -86,7 +88,7 @@ class SimpleMovementController {
         }
     }
 
-    void move(MinecraftClient client, ActionRequest request, String direction, Runnable cancelConflictingMovement) {
+    public void move(MinecraftClient client, ActionRequest request, String direction, Runnable cancelConflictingMovement) {
         if (client == null || client.player == null || client.options == null) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
             state.queueChatMessage("action failed");
@@ -111,7 +113,7 @@ class SimpleMovementController {
         }
     }
 
-    void startApproach(MinecraftClient client, ActionRequest request, Consumer<MinecraftClient> stopMovement,
+    public void startApproach(MinecraftClient client, ActionRequest request, Consumer<MinecraftClient> stopMovement,
                        BiFunction<ClientPlayerEntity, String, AbstractClientPlayerEntity> targetFinder,
                        Runnable cancelConflictingMovement) {
         if (client == null || client.player == null || client.world == null || client.options == null) {
@@ -147,17 +149,17 @@ class SimpleMovementController {
         state.queueChatMessage("approaching " + request.actionData());
     }
 
-    void cancelActiveMovement() {
+    public void cancelActiveMovement() {
         activeApproach = null;
         timedMovement = null;
         timedMovementTicksRemaining = 0;
     }
 
-    void cancelApproach() {
+    public void cancelApproach() {
         activeApproach = null;
     }
 
-    void cancelTimedMovement() {
+    public void cancelTimedMovement() {
         timedMovement = null;
         timedMovementTicksRemaining = 0;
     }

@@ -1,5 +1,11 @@
-package com.foster.bambooclientbot.actions;
+package com.foster.bambooclientbot.behavior;
 
+import com.foster.bambooclientbot.actions.ActionRequest;
+import com.foster.bambooclientbot.actions.MovementDiagnostics;
+import com.foster.bambooclientbot.actions.RouteExecutor;
+import com.foster.bambooclientbot.control.LookController;
+import com.foster.bambooclientbot.control.MovementController;
+import com.foster.bambooclientbot.control.MovementRecovery;
 import com.foster.bambooclientbot.navigation.PathPlanResult;
 import com.foster.bambooclientbot.navigation.PathPlanner;
 import com.foster.bambooclientbot.state.BotState;
@@ -11,7 +17,7 @@ import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 
-class GotoController {
+public class GotoBehavior {
     private static final double GOTO_HORIZONTAL_ARRIVAL_DISTANCE = 1.5;
     private static final double GOTO_VERTICAL_ARRIVAL_DISTANCE = 2.0;
     private static final double GOTO_WAYPOINT_DISTANCE = 0.8;
@@ -31,9 +37,9 @@ class GotoController {
     private int activeGotoRouteIndex;
     private int gotoStuckReplans;
 
-    GotoController(BotState state, PathPlanner pathPlanner, LookController lookController,
-                   RouteExecutor routeExecutor, MovementRecovery movementRecovery,
-                   MovementDiagnostics movementDiagnostics, MovementController movementController) {
+    public GotoBehavior(BotState state, PathPlanner pathPlanner, LookController lookController,
+                        RouteExecutor routeExecutor, MovementRecovery movementRecovery,
+                        MovementDiagnostics movementDiagnostics, MovementController movementController) {
         this.state = state;
         this.pathPlanner = pathPlanner;
         this.lookController = lookController;
@@ -43,7 +49,7 @@ class GotoController {
         this.movementController = movementController;
     }
 
-    void tick(MinecraftClient client, Runnable stopMovement) {
+    public void tick(MinecraftClient client, Runnable stopMovement) {
         if (activeGoto == null) {
             return;
         }
@@ -97,7 +103,7 @@ class GotoController {
                 false, activeGotoRouteIndex, activeGotoRoute.size());
     }
 
-    void start(MinecraftClient client, ActionRequest request, Runnable beforeActivate, Runnable stopMovement) {
+    public void start(MinecraftClient client, ActionRequest request, Runnable beforeActivate, Runnable stopMovement) {
         GotoTarget target = request.gotoTarget();
 
         if (client == null || client.player == null || client.world == null || client.options == null || target == null) {
@@ -157,7 +163,7 @@ class GotoController {
         state.queueChatMessage("going to " + target.formatForChat());
     }
 
-    void cancel(String reason) {
+    public void cancel(String reason) {
         if (activeGoto == null) {
             state.clearActiveGoto();
             return;

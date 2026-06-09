@@ -1,4 +1,4 @@
-package com.foster.bambooclientbot.actions;
+package com.foster.bambooclientbot.control;
 
 import com.foster.bambooclientbot.logging.BambooBotLog;
 import java.util.List;
@@ -7,7 +7,7 @@ import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 
-class LookController {
+public class LookController {
     private static final double ROUTE_LOOK_HEIGHT = 1.5;
     private static final int ROUTE_GAZE_PREVIEW_OFFSET = 3;
     private static final int ROUTE_STEERING_LOOKAHEAD_OFFSET = 2;
@@ -23,12 +23,12 @@ class LookController {
     private int lookRequestCount;
     private boolean lookConflictLogged;
 
-    void beginTick() {
+    public void beginTick() {
         lookRequestCount = 0;
         lookConflictLogged = false;
     }
 
-    void rotateToward(ClientPlayerEntity player, Vec3d targetPosition) {
+    public void rotateToward(ClientPlayerEntity player, Vec3d targetPosition) {
         recordLookRequest("direct");
         Angles angles = anglesTo(player, targetPosition);
 
@@ -40,7 +40,7 @@ class LookController {
         player.setBodyYaw(angles.yaw());
     }
 
-    void rotateForNavigation(ClientPlayerEntity player, Vec3d steeringTarget, Vec3d gazeTarget) {
+    public void rotateForNavigation(ClientPlayerEntity player, Vec3d steeringTarget, Vec3d gazeTarget) {
         recordLookRequest("navigation");
         Angles steeringAngles = anglesTo(player, steeringTarget);
         Vec3d stabilizedGazeTarget = stabilizedGazeTarget(gazeTarget);
@@ -54,7 +54,7 @@ class LookController {
         player.setBodyYaw(steeringAngles.yaw());
     }
 
-    Vec3d routeLookTarget(ClientPlayerEntity player, List<BlockPos> route, int routeIndex) {
+    public Vec3d routeLookTarget(ClientPlayerEntity player, List<BlockPos> route, int routeIndex) {
         BlockPos waypoint = route.get(routeIndex);
         Vec3d current = waypointCenter(waypoint);
         Vec3d lookPoint = current;
@@ -68,11 +68,11 @@ class LookController {
         return new Vec3d(lookPoint.x, lookY, lookPoint.z);
     }
 
-    Vec3d followRouteLookTarget(List<BlockPos> route, int routeIndex) {
+    public Vec3d followRouteLookTarget(List<BlockPos> route, int routeIndex) {
         return waypointCenter(route.get(routeIndex));
     }
 
-    Vec3d routeSteeringTarget(ClientPlayerEntity player, List<BlockPos> route, int routeIndex) {
+    public Vec3d routeSteeringTarget(ClientPlayerEntity player, List<BlockPos> route, int routeIndex) {
         int steeringIndex = routeIndex;
 
         if (horizontalDistance(player, route.get(routeIndex)) <= ROUTE_STEERING_LOOKAHEAD_DISTANCE) {
@@ -89,7 +89,7 @@ class LookController {
         return new Vec3d(steeringCenter.x, lookY, steeringCenter.z);
     }
 
-    Vec3d routePreviewGazeTarget(ClientPlayerEntity player, List<BlockPos> route, int routeIndex) {
+    public Vec3d routePreviewGazeTarget(ClientPlayerEntity player, List<BlockPos> route, int routeIndex) {
         int previewIndex = routeIndex;
 
         if (routeIndex + ROUTE_GAZE_PREVIEW_OFFSET < route.size()) {
@@ -106,7 +106,7 @@ class LookController {
         return new Vec3d(previewCenter.x, lookY, previewCenter.z);
     }
 
-    Vec3d upperBodyTarget(AbstractClientPlayerEntity target) {
+    public Vec3d upperBodyTarget(AbstractClientPlayerEntity target) {
         double y = target.getY() + target.getHeight() * 0.75;
         return new Vec3d(target.getX(), y, target.getZ());
     }

@@ -1,5 +1,6 @@
 package com.foster.bambooclientbot.actions;
 
+import com.foster.bambooclientbot.behavior.FollowBehavior;
 import com.foster.bambooclientbot.logging.BambooBotLog;
 import java.util.Locale;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
@@ -7,7 +8,7 @@ import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.option.GameOptions;
 import net.minecraft.util.math.BlockPos;
 
-class MovementDiagnostics {
+public class MovementDiagnostics {
     private static final long MOVEMENT_LOG_INTERVAL_MILLIS = 1_000L;
     private static final long FOLLOW_LOG_INTERVAL_MILLIS = 1_000L;
 
@@ -20,11 +21,11 @@ class MovementDiagnostics {
     private String followSelectedCandidate = "none";
     private boolean followEmptyRouteFallback;
 
-    void setFollowReplanReason(String reason) {
+    public void setFollowReplanReason(String reason) {
         followReplanReason = normalize(reason);
     }
 
-    String followReplanReason(boolean routeEmpty, boolean targetMoved, boolean timerElapsed) {
+    public String followReplanReason(boolean routeEmpty, boolean targetMoved, boolean timerElapsed) {
         if (routeEmpty) {
             return "empty_route";
         }
@@ -40,30 +41,30 @@ class MovementDiagnostics {
         return "none";
     }
 
-    void setFollowRecovery(String recovery) {
+    public void setFollowRecovery(String recovery) {
         followRecovery = normalize(recovery);
     }
 
-    void forceNextFollowLog() {
+    public void forceNextFollowLog() {
         lastFollowLogMillis = 0L;
     }
 
-    void recordFollowPlanStats(FollowController.PlanStats stats) {
+    public void recordFollowPlanStats(FollowBehavior.PlanStats stats) {
         followCandidateCount = stats.candidateCount();
         followSuccessfulCandidates = stats.successfulCandidates();
         followSelectedCandidate = stats.selectedCandidate();
         followEmptyRouteFallback = stats.emptyRouteFallback();
     }
 
-    int followCandidateCount() {
+    public int followCandidateCount() {
         return followCandidateCount;
     }
 
-    int followSuccessfulCandidates() {
+    public int followSuccessfulCandidates() {
         return followSuccessfulCandidates;
     }
 
-    void clearFollowState() {
+    public void clearFollowState() {
         followReplanReason = "none";
         followRecovery = "none";
         followCandidateCount = 0;
@@ -72,7 +73,7 @@ class MovementDiagnostics {
         followEmptyRouteFallback = false;
     }
 
-    void logMovement(String movementMode, GameOptions options, ClientPlayerEntity player, BlockPos waypoint,
+    public void logMovement(String movementMode, GameOptions options, ClientPlayerEntity player, BlockPos waypoint,
                      double targetDy, boolean jumpWanted, int routeIndex, int routeLength) {
         long now = System.currentTimeMillis();
         if (now - lastMovementLogMillis < MOVEMENT_LOG_INTERVAL_MILLIS) {
@@ -99,7 +100,7 @@ class MovementDiagnostics {
         ));
     }
 
-    void logFollow(ClientPlayerEntity player, AbstractClientPlayerEntity target, boolean followGoalSatisfied,
+    public void logFollow(ClientPlayerEntity player, AbstractClientPlayerEntity target, boolean followGoalSatisfied,
                    String goalLabel, int routeIndex, int routeLength, double followDistance,
                    boolean recoveryActive) {
         long now = System.currentTimeMillis();

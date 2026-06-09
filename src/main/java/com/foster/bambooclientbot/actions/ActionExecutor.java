@@ -1,5 +1,11 @@
 package com.foster.bambooclientbot.actions;
 
+import com.foster.bambooclientbot.behavior.FollowBehavior;
+import com.foster.bambooclientbot.behavior.GotoBehavior;
+import com.foster.bambooclientbot.control.LookController;
+import com.foster.bambooclientbot.control.MovementController;
+import com.foster.bambooclientbot.control.MovementRecovery;
+import com.foster.bambooclientbot.control.SimpleMovementController;
 import com.foster.bambooclientbot.navigation.NavigationGrid;
 import com.foster.bambooclientbot.navigation.PathPlanner;
 import com.foster.bambooclientbot.state.BotState;
@@ -18,13 +24,13 @@ public class ActionExecutor {
     private final LookController lookController = new LookController();
     private final MovementController movementController = new MovementController();
     private final MovementDiagnostics movementDiagnostics = new MovementDiagnostics();
-    private final FollowController followController;
+    private final FollowBehavior followBehavior;
     private final RouteExecutor routeExecutor;
     private final MovementRecovery movementRecovery;
     private final SimpleMovementController simpleMovementController;
     private final InventoryActionExecutor inventoryActionExecutor;
     private final ContainerActionExecutor containerActionExecutor;
-    private final GotoController gotoController;
+    private final GotoBehavior gotoBehavior;
 
     public ActionExecutor(BotState state) {
         this.state = state;
@@ -33,9 +39,9 @@ public class ActionExecutor {
         simpleMovementController = new SimpleMovementController(state, lookController, routeExecutor, movementController);
         inventoryActionExecutor = new InventoryActionExecutor(state, lookController);
         containerActionExecutor = new ContainerActionExecutor(state, inventoryActionExecutor);
-        followController = new FollowController(state, pathPlanner, lookController, routeExecutor, movementRecovery,
+        followBehavior = new FollowBehavior(state, pathPlanner, lookController, routeExecutor, movementRecovery,
                 movementController, movementDiagnostics);
-        gotoController = new GotoController(state, pathPlanner, lookController, routeExecutor, movementRecovery,
+        gotoBehavior = new GotoBehavior(state, pathPlanner, lookController, routeExecutor, movementRecovery,
                 movementDiagnostics, movementController);
     }
 
@@ -53,8 +59,8 @@ public class ActionExecutor {
         }
 
         simpleMovementController.tickApproach(client, this::stop, (player, targetName) -> findTargetPlayer(client, player, targetName));
-        followController.tick(client, this::stop, (player, targetName) -> findTargetPlayer(client, player, targetName));
-        gotoController.tick(client, () -> stop(client));
+        followBehavior.tick(client, this::stop, (player, targetName) -> findTargetPlayer(client, player, targetName));
+        gotoBehavior.tick(client, () -> stop(client));
         simpleMovementController.tickTimedMovement(client, this::stop);
         tickAutoSneak(client);
         tickAutoUse(client);
@@ -68,8 +74,8 @@ public class ActionExecutor {
         try {
             if (request.actionType() == ActionRequest.ActionType.STOP) {
                 simpleMovementController.cancelActiveMovement();
-                followController.cancelActiveFollow();
-                gotoController.cancel("goto_cancelled");
+                followBehavior.cancelActiveFollow();
+                gotoBehavior.cancel("goto_cancelled");
                 routeExecutor.resetJumpCooldown();
                 state.setAutoSwing(false);
                 state.setLastSwingTimeMillis(0L);
@@ -191,8 +197,8 @@ public class ActionExecutor {
 
     private void move(MinecraftClient client, ActionRequest request, String direction) {
         simpleMovementController.move(client, request, direction, () -> {
-            followController.cancelActiveFollow();
-            gotoController.cancel("goto_cancelled");
+            followBehavior.cancelActiveFollow();
+            gotoBehavior.cancel("goto_cancelled");
         });
     }
 
@@ -200,22 +206,22 @@ public class ActionExecutor {
         simpleMovementController.startApproach(client, request, this::stop,
                 (player, targetName) -> findTargetPlayer(client, player, targetName),
                 () -> {
-                    followController.cancelActiveFollow();
-                    gotoController.cancel("goto_cancelled");
+                    followBehavior.cancelActiveFollow();
+                    gotoBehavior.cancel("goto_cancelled");
                 });
     }
 
     private void startFollow(MinecraftClient client, ActionRequest request) {
-        followController.startFollow(client, request, () -> {
+        followBehavior.startFollow(client, request, () -> {
             simpleMovementController.cancelActiveMovement();
-            gotoController.cancel("goto_cancelled");
+            gotoBehavior.cancel("goto_cancelled");
         }, (player, targetName) -> findTargetPlayer(client, player, targetName));
     }
 
     private void startGoto(MinecraftClient client, ActionRequest request) {
-        gotoController.start(client, request, () -> {
+        gotoBehavior.start(client, request, () -> {
             simpleMovementController.cancelActiveMovement();
-            followController.cancelActiveFollow();
+            followBehavior.cancelActiveFollow();
         }, () -> stop(client));
     }
 
