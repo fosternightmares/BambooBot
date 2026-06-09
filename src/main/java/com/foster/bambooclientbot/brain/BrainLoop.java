@@ -45,6 +45,20 @@ public class BrainLoop {
         while ((request = state.pollCommand()) != null) {
             if ("status".equals(request.command())) {
                 state.queueChatMessage(playerSensors.readStatus(client, state));
+            } else if ("movement".equals(request.command())) {
+                state.queueChatMessage(playerSensors.readMovementStatus(client, state));
+            } else if ("route".equals(request.command())) {
+                state.queueChatMessage(playerSensors.readRouteStatus(state));
+            } else if ("follow status".equals(request.command())) {
+                state.queueChatMessage(playerSensors.readFollowStatus(state));
+            } else if ("inventory status".equals(request.command())) {
+                state.queueChatMessage(playerSensors.readInventoryStatus(state));
+            } else if ("container status".equals(request.command())) {
+                state.queueChatMessage(playerSensors.readContainerStatus(state));
+            } else if ("threats".equals(request.command())) {
+                state.queueChatMessage(playerSensors.readThreatStatus(state));
+            } else if ("sensors".equals(request.command())) {
+                state.queueChatMessage(worldSensors.readSensorSummary(client, state));
             } else if ("nearby".equals(request.command())) {
                 state.queueChatMessage(worldSensors.readNearby(client));
             } else if ("nav check".equals(request.command())) {

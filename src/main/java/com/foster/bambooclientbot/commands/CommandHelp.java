@@ -6,6 +6,13 @@ public final class CommandHelp {
     private static final int MAX_HELP_LENGTH = 240;
     private static final List<String> VISIBLE_COMMANDS = List.of(
             "status",
+            "movement",
+            "route",
+            "follow status",
+            "inventory status",
+            "container status",
+            "threats",
+            "sensors",
             "nearby",
             "nav check",
             "path <x> <y> <z>",

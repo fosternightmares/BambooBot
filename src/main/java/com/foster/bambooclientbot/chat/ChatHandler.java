@@ -88,6 +88,10 @@ public final class ChatHandler {
             return new CommandRequest("approach", resolvePlayerArg(targetPlayer, senderName));
         }
 
+        if ("follow status".equals(command)) {
+            return new CommandRequest(command);
+        }
+
         if (command.startsWith("follow ")) {
             String targetPlayer = command.substring("follow ".length()).trim();
 

@@ -1,5 +1,6 @@
 package com.foster.bambooclientbot.sensors;
 
+import com.foster.bambooclientbot.state.BotState;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -57,6 +58,44 @@ public class WorldSensors {
                 + " items=" + formatGroup(items);
     }
 
+    public String readSensorSummary(MinecraftClient client, BotState state) {
+        if (client == null || client.player == null || client.world == null) {
+            return "sensors unavailable";
+        }
+
+        ClientPlayerEntity player = client.player;
+        int players = 0;
+        int hostiles = 0;
+        int passives = 0;
+        int items = 0;
+
+        for (Entity entity : client.world.getEntities()) {
+            if (entity == player || !entity.isAlive()) {
+                continue;
+            }
+
+            if (player.distanceTo(entity) > NEARBY_RADIUS) {
+                continue;
+            }
+
+            if (entity instanceof PlayerEntity) {
+                players++;
+            } else if (entity instanceof HostileEntity) {
+                hostiles++;
+            } else if (entity instanceof PassiveEntity) {
+                passives++;
+            } else if (entity instanceof ItemEntity) {
+                items++;
+            }
+        }
+
+        return "nearbyPlayers=" + players
+                + " hostiles=" + hostiles
+                + " passives=" + passives
+                + " items=" + items
+                + " " + lookingAtBlockStatus(state);
+    }
+
     private String formatGroup(List<EntityDistance> entities) {
         if (entities.isEmpty()) {
             return "none";
@@ -79,6 +118,14 @@ public class WorldSensors {
 
     private String formatDistance(double distance) {
         return String.format(Locale.ROOT, "%.1f", distance);
+    }
+
+    private String lookingAtBlockStatus(BotState state) {
+        if (state.lookedAtBlock() == null) {
+            return "lookingAtBlock=none";
+        }
+
+        return state.lookedAtBlock().format();
     }
 
     private record EntityDistance(String name, double distance) {
