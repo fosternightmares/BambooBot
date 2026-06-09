@@ -20,7 +20,6 @@ public class LookController {
     private static final double MAX_GAZE_PITCH_DELTA = 4.0;
     private static final double MAX_NAVIGATION_TARGET_YAW_CHANGE = 40.0;
     private static final float YAW_TIE_EPSILON = 0.01f;
-    private static final float YAW_OPPOSITE_EPSILON = 5.0f;
 
     private Vec3d stableGazeTarget;
     private long lastGazeTargetUpdateMillis;
@@ -40,7 +39,7 @@ public class LookController {
     public void rotateToward(ClientPlayerEntity player, Vec3d targetPosition) {
         recordLookRequest("direct");
         Angles angles = anglesTo(player, targetPosition);
-        float currentYaw = player.getYaw();
+        float currentYaw = normalizeYaw(player.getYaw());
         float currentPitch = player.getPitch();
         float targetYaw = yawTargetRelativeTo(currentYaw, angles.yaw());
         float appliedYawDelta = yawDelta(currentYaw, targetYaw);
@@ -59,12 +58,12 @@ public class LookController {
     public void rotateForNavigation(ClientPlayerEntity player, Vec3d steeringTarget, Vec3d gazeTarget) {
         recordLookRequest("navigation");
         Angles steeringAngles = anglesTo(player, steeringTarget);
-        float currentYaw = player.getYaw();
+        float currentYaw = normalizeYaw(player.getYaw());
         float currentPitch = player.getPitch();
         float targetYaw = yawTargetRelativeTo(currentYaw, steeringAngles.yaw());
         Vec3d stabilizedGazeTarget = stabilizedNavigationGazeTarget(player, gazeTarget, targetYaw);
         Angles gazeAngles = anglesTo(player, stabilizedGazeTarget);
-        float headYaw = approachYaw(player.getHeadYaw(), gazeAngles.yaw(), MAX_GAZE_YAW_DELTA);
+        float headYaw = approachYaw(normalizeYaw(player.getHeadYaw()), gazeAngles.yaw(), MAX_GAZE_YAW_DELTA);
         float pitch = approachAngle(player.getPitch(), gazeAngles.pitch(), MAX_GAZE_PITCH_DELTA);
         float appliedYawDelta = yawDelta(currentYaw, targetYaw);
         float appliedPitchDelta = pitch - currentPitch;
@@ -235,31 +234,25 @@ public class LookController {
             delta = (float) -maxDelta;
         }
 
-        return current + delta;
+        return normalizeYaw(current + delta);
     }
 
     private float yawTargetRelativeTo(float current, float target) {
-        return current + yawDelta(current, target);
+        return normalizeYaw(current + yawDelta(current, target));
     }
 
     private float yawDelta(float current, float target) {
-        float delta = wrapDegrees(target - current);
+        float delta = normalizeYaw(target) - normalizeYaw(current);
+        delta = normalizeYaw(delta);
 
         if (Math.abs(Math.abs(delta) - 180.0f) <= YAW_TIE_EPSILON) {
             return 180.0f * lastAppliedYawDirection;
         }
 
-        int deltaSign = sign(delta);
-        if (Math.abs(delta) >= 180.0f - YAW_OPPOSITE_EPSILON
-                && deltaSign != 0
-                && deltaSign != lastAppliedYawDirection) {
-            return Math.copySign(360.0f - Math.abs(delta), lastAppliedYawDirection);
-        }
-
         return delta;
     }
 
-    private float wrapDegrees(float degrees) {
+    private float normalizeYaw(float degrees) {
         float wrapped = degrees % 360.0f;
 
         if (wrapped >= 180.0f) {
@@ -291,16 +284,20 @@ public class LookController {
         boolean pitchSignFlip = lastPitchDeltaSign != 0 && pitchDeltaSign != 0
                 && pitchDeltaSign != lastPitchDeltaSign;
         boolean methodSwitch = !lastWriteMethod.equals("none") && !lastWriteMethod.equals(method);
-        boolean headYawDiffers = Math.abs(wrapDegrees(player.getHeadYaw() - player.getYaw())) > 0.01f;
-        boolean bodyYawDiffers = Math.abs(wrapDegrees(player.getBodyYaw() - player.getYaw())) > 0.01f;
+        float normalizedCurrentYaw = normalizeYaw(currentYaw);
+        float normalizedTargetYaw = normalizeYaw(targetYaw);
+        boolean headYawDiffers = Math.abs(yawDelta(player.getYaw(), player.getHeadYaw())) > 0.01f;
+        boolean bodyYawDiffers = Math.abs(yawDelta(player.getYaw(), player.getBodyYaw())) > 0.01f;
 
         BambooBotLog.info(String.format(Locale.ROOT,
-                "LOOK m=%s switch=%s cy=%.2f cp=%.2f ty=%.2f tp=%.2f dy=%.2f dp=%.2f yflip=%s pflip=%s headDiff=%s bodyDiff=%s",
+                "LOOK m=%s switch=%s cy=%.2f ncy=%.2f cp=%.2f ty=%.2f nty=%.2f tp=%.2f dy=%.2f dp=%.2f yflip=%s pflip=%s headDiff=%s bodyDiff=%s",
                 method,
                 methodSwitch,
                 currentYaw,
+                normalizedCurrentYaw,
                 currentPitch,
                 targetYaw,
+                normalizedTargetYaw,
                 targetPitch,
                 appliedYawDelta,
                 appliedPitchDelta,
