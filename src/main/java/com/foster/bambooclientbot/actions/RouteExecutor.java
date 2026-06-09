@@ -2,7 +2,6 @@ package com.foster.bambooclientbot.actions;
 
 import com.foster.bambooclientbot.state.BotState;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.option.GameOptions;
 import net.minecraft.util.math.BlockPos;
 
 class RouteExecutor {
@@ -29,48 +28,47 @@ class RouteExecutor {
         jumpCooldownTicks = 0;
     }
 
-    boolean pressJumpIfReady(GameOptions options) {
+    boolean pressJumpIfReady() {
         if (jumpCooldownTicks > 0) {
             return false;
         }
 
-        options.jumpKey.setPressed(true);
         state.setFollowJump(true);
         jumpCooldownTicks = FOLLOW_JUMP_COOLDOWN_TICKS;
         return true;
     }
 
-    void updateSprint(GameOptions options, double targetDistance) {
+    boolean sprintPressed(boolean currentSprintPressed, double targetDistance) {
         if (targetDistance > FOLLOW_SPRINT_ENABLE_DISTANCE) {
-            options.sprintKey.setPressed(true);
-        } else if (targetDistance <= FOLLOW_SPRINT_DISABLE_DISTANCE) {
-            options.sprintKey.setPressed(false);
+            return true;
         }
+
+        if (targetDistance <= FOLLOW_SPRINT_DISABLE_DISTANCE) {
+            return false;
+        }
+
+        return currentSprintPressed;
     }
 
-    boolean executeFollowRoute(GameOptions options, ClientPlayerEntity player, BlockPos waypoint,
-                               double targetDistance) {
-        clearDirectionalKeys(options);
-        options.forwardKey.setPressed(true);
+    RouteMovement followRouteMovement(ClientPlayerEntity player, BlockPos waypoint, double targetDistance,
+                                      boolean currentSprintPressed) {
         boolean jumpWanted = followRouteJumpWanted(player, waypoint);
-        updateFollowRouteJump(options, player, jumpWanted);
-        updateSprint(options, targetDistance);
-        return jumpWanted;
+        boolean jumpPressed = followRouteJumpPressed(player, jumpWanted);
+        boolean sprintPressed = sprintPressed(currentSprintPressed, targetDistance);
+        return new RouteMovement(jumpPressed, sprintPressed, jumpWanted);
     }
 
-    void executeGotoRoute(GameOptions options, ClientPlayerEntity player, BlockPos waypoint,
-                          double horizontalDistance) {
-        clearDirectionalKeys(options);
-        options.forwardKey.setPressed(true);
-        updateGotoJump(options, player, waypoint);
-        updateSprint(options, horizontalDistance);
+    RouteMovement gotoRouteMovement(ClientPlayerEntity player, BlockPos waypoint, double horizontalDistance,
+                                    boolean currentSprintPressed) {
+        boolean jumpPressed = gotoJumpPressed(player, waypoint);
+        boolean sprintPressed = sprintPressed(currentSprintPressed, horizontalDistance);
+        return new RouteMovement(jumpPressed, sprintPressed, false);
     }
 
-    void updateGotoJump(GameOptions options, ClientPlayerEntity player, BlockPos waypoint) {
+    boolean gotoJumpPressed(ClientPlayerEntity player, BlockPos waypoint) {
         if (!canJump(player)) {
-            options.jumpKey.setPressed(false);
             state.setFollowJump(false);
-            return;
+            return false;
         }
 
         boolean targetAbove = waypoint.getY() - player.getY() >= GOTO_JUMP_TARGET_Y_DELTA
@@ -78,32 +76,29 @@ class RouteExecutor {
         boolean blocked = player.horizontalCollision;
 
         if ((targetAbove || blocked) && jumpCooldownTicks <= 0) {
-            options.jumpKey.setPressed(true);
             state.setFollowJump(true);
             jumpCooldownTicks = FOLLOW_JUMP_COOLDOWN_TICKS;
-            return;
+            return true;
         }
 
-        options.jumpKey.setPressed(false);
         state.setFollowJump(false);
+        return false;
     }
 
-    void updateFollowRouteJump(GameOptions options, ClientPlayerEntity player, boolean jumpWanted) {
+    boolean followRouteJumpPressed(ClientPlayerEntity player, boolean jumpWanted) {
         if (!canJump(player)) {
-            options.jumpKey.setPressed(false);
             state.setFollowJump(false);
-            return;
+            return false;
         }
 
         if (jumpWanted && jumpCooldownTicks <= 0) {
-            options.jumpKey.setPressed(true);
             state.setFollowJump(true);
             jumpCooldownTicks = FOLLOW_JUMP_COOLDOWN_TICKS;
-            return;
+            return true;
         }
 
-        options.jumpKey.setPressed(false);
         state.setFollowJump(false);
+        return false;
     }
 
     boolean followRouteJumpWanted(ClientPlayerEntity player, BlockPos waypoint) {
@@ -123,10 +118,6 @@ class RouteExecutor {
         return Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
     }
 
-    private void clearDirectionalKeys(GameOptions options) {
-        options.forwardKey.setPressed(false);
-        options.backKey.setPressed(false);
-        options.leftKey.setPressed(false);
-        options.rightKey.setPressed(false);
+    record RouteMovement(boolean jumpPressed, boolean sprintPressed, boolean jumpWanted) {
     }
 }

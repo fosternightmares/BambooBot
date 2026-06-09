@@ -12,6 +12,7 @@ class MovementRecovery {
 
     private final BotState state;
     private final LookController lookController;
+    private final MovementController movementController;
     private double bestFollowWaypointDistance = Double.POSITIVE_INFINITY;
     private int followStuckTicks;
     private double bestGotoWaypointDistance = Double.POSITIVE_INFINITY;
@@ -19,9 +20,10 @@ class MovementRecovery {
     private int followEmptyRouteTicks;
     private int followForwardNudgeTicks;
 
-    MovementRecovery(BotState state, LookController lookController) {
+    MovementRecovery(BotState state, LookController lookController, MovementController movementController) {
         this.state = state;
         this.lookController = lookController;
+        this.movementController = movementController;
     }
 
     boolean tickFollowEmptyRouteRecovery(MinecraftClient client, ClientPlayerEntity player,
@@ -114,19 +116,9 @@ class MovementRecovery {
                                          AbstractClientPlayerEntity target, MovementDiagnostics diagnostics,
                                          String goalLabel, int routeIndex, int routeLength, double followDistance) {
         lookController.rotateToward(player, target.getEyePos());
-        clearDirectionalKeys(client.options);
-        client.options.forwardKey.setPressed(true);
-        client.options.jumpKey.setPressed(false);
-        client.options.sprintKey.setPressed(false);
+        movementController.applyForwardNudge(client.options);
         state.setFollowJump(false);
         diagnostics.logFollow(player, target, false, goalLabel, routeIndex, routeLength, followDistance,
                 followRecoveryActive());
-    }
-
-    private void clearDirectionalKeys(net.minecraft.client.option.GameOptions options) {
-        options.forwardKey.setPressed(false);
-        options.backKey.setPressed(false);
-        options.leftKey.setPressed(false);
-        options.rightKey.setPressed(false);
     }
 }

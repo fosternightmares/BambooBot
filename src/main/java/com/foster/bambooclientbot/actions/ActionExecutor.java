@@ -16,6 +16,7 @@ public class ActionExecutor {
     private final BotState state;
     private final PathPlanner pathPlanner = new PathPlanner(new NavigationGrid());
     private final LookController lookController = new LookController();
+    private final MovementController movementController = new MovementController();
     private final MovementDiagnostics movementDiagnostics = new MovementDiagnostics();
     private final FollowController followController;
     private final RouteExecutor routeExecutor;
@@ -28,17 +29,19 @@ public class ActionExecutor {
     public ActionExecutor(BotState state) {
         this.state = state;
         routeExecutor = new RouteExecutor(state);
-        movementRecovery = new MovementRecovery(state, lookController);
-        simpleMovementController = new SimpleMovementController(state, lookController, routeExecutor);
+        movementRecovery = new MovementRecovery(state, lookController, movementController);
+        simpleMovementController = new SimpleMovementController(state, lookController, routeExecutor, movementController);
         inventoryActionExecutor = new InventoryActionExecutor(state, lookController);
         containerActionExecutor = new ContainerActionExecutor(state, inventoryActionExecutor);
         followController = new FollowController(state, pathPlanner, lookController, routeExecutor, movementRecovery,
-                simpleMovementController, movementDiagnostics);
+                movementController, movementDiagnostics);
         gotoController = new GotoController(state, pathPlanner, lookController, routeExecutor, movementRecovery,
-                movementDiagnostics);
+                movementDiagnostics, movementController);
     }
 
     public void tick(MinecraftClient client) {
+        lookController.beginTick();
+        movementController.beginTick();
         ActionRequest request = state.pollAction();
 
         if (request != null) {
@@ -149,7 +152,7 @@ public class ActionExecutor {
         state.setAutoUse(enabled);
 
         if (client != null && client.options != null) {
-            client.options.useKey.setPressed(enabled);
+            movementController.setUse(client.options, enabled, "autouse_set");
         }
 
         request.setStatus(ActionRequest.ActionStatus.COMPLETE);
@@ -162,7 +165,7 @@ public class ActionExecutor {
         state.setAutoSneak(enabled);
 
         if (client != null && client.options != null) {
-            client.options.sneakKey.setPressed(enabled);
+            movementController.setSneak(client.options, enabled, "autosneak_set");
         }
 
         request.setStatus(ActionRequest.ActionStatus.COMPLETE);
@@ -177,8 +180,8 @@ public class ActionExecutor {
         state.setAutoSneak(false);
 
         if (client != null && client.options != null) {
-            client.options.useKey.setPressed(false);
-            client.options.sneakKey.setPressed(false);
+            movementController.setUse(client.options, false, "farm_actions_off");
+            movementController.setSneak(client.options, false, "farm_actions_off");
         }
 
         request.setStatus(ActionRequest.ActionStatus.COMPLETE);
@@ -222,14 +225,9 @@ public class ActionExecutor {
         }
 
         GameOptions options = client.options;
-        simpleMovementController.clearDirectionalKeys(options);
-        options.jumpKey.setPressed(false);
+        movementController.stopAll(options);
         routeExecutor.resetJumpCooldown();
         state.setFollowJump(false);
-        options.sneakKey.setPressed(false);
-        options.sprintKey.setPressed(false);
-        options.attackKey.setPressed(false);
-        options.useKey.setPressed(false);
     }
 
     private void tickAutoUse(MinecraftClient client) {
@@ -242,7 +240,7 @@ public class ActionExecutor {
             return;
         }
 
-        client.options.useKey.setPressed(true);
+        movementController.setUse(client.options, true, "autouse_tick");
     }
 
     private void tickAutoSneak(MinecraftClient client) {
@@ -255,7 +253,7 @@ public class ActionExecutor {
             return;
         }
 
-        client.options.sneakKey.setPressed(true);
+        movementController.setSneak(client.options, true, "autosneak_tick");
     }
 
     private void tickAutoSwing(MinecraftClient client) {

@@ -33,7 +33,7 @@ class FollowController {
     private final LookController lookController;
     private final RouteExecutor routeExecutor;
     private final MovementRecovery movementRecovery;
-    private final SimpleMovementController simpleMovementController;
+    private final MovementController movementController;
     private final MovementDiagnostics movementDiagnostics;
     private ActionRequest activeFollow;
     private int followStuckReplans;
@@ -45,13 +45,13 @@ class FollowController {
 
     FollowController(BotState state, PathPlanner pathPlanner, LookController lookController,
                      RouteExecutor routeExecutor, MovementRecovery movementRecovery,
-                     SimpleMovementController simpleMovementController, MovementDiagnostics movementDiagnostics) {
+                     MovementController movementController, MovementDiagnostics movementDiagnostics) {
         this.state = state;
         this.pathPlanner = pathPlanner;
         this.lookController = lookController;
         this.routeExecutor = routeExecutor;
         this.movementRecovery = movementRecovery;
-        this.simpleMovementController = simpleMovementController;
+        this.movementController = movementController;
         this.movementDiagnostics = movementDiagnostics;
     }
 
@@ -93,9 +93,7 @@ class FollowController {
         double followDistanceToTarget = player.distanceTo(target);
         if (followDistanceToTarget <= FOLLOW_DISTANCE) {
             logFollowDiagnostics(player, target, true);
-            simpleMovementController.clearDirectionalKeys(client.options);
-            client.options.jumpKey.setPressed(false);
-            client.options.sprintKey.setPressed(false);
+            movementController.clearRouteMovement(client.options, "follow_hold");
             state.setFollowJump(false);
             clearActiveFollowRoute();
             return;
@@ -142,9 +140,7 @@ class FollowController {
             }
 
             logFollowDiagnostics(player, target, false);
-            simpleMovementController.clearDirectionalKeys(client.options);
-            client.options.jumpKey.setPressed(false);
-            client.options.sprintKey.setPressed(false);
+            movementController.clearRouteMovement(client.options, "follow_empty_route");
             state.setFollowJump(false);
             return;
         }
@@ -163,9 +159,11 @@ class FollowController {
                 ? lookController.upperBodyTarget(target)
                 : lookController.routePreviewGazeTarget(player, route(), routeIndex());
         lookController.rotateForNavigation(player, lookController.routeSteeringTarget(player, route(), routeIndex()), gazeTarget);
-        boolean jumpWanted = routeExecutor.executeFollowRoute(client.options, player, waypoint, player.distanceTo(target));
+        RouteExecutor.RouteMovement movement = routeExecutor.followRouteMovement(player, waypoint, player.distanceTo(target),
+                client.options.sprintKey.isPressed());
+        movementController.applyRouteMovement(client.options, movement, "follow_route");
         movementDiagnostics.logMovement("follow_route", client.options, player, waypoint, waypoint.getY() - player.getY(),
-                jumpWanted,
+                movement.jumpWanted(),
                 routeIndex(),
                 routeLength());
         logFollowDiagnostics(player, target, false);
@@ -199,9 +197,7 @@ class FollowController {
         cancelConflictingMovement.run();
         clearActiveFollowRoute();
         routeExecutor.resetJumpCooldown();
-        simpleMovementController.clearDirectionalKeys(client.options);
-        client.options.sprintKey.setPressed(false);
-        client.options.jumpKey.setPressed(false);
+        movementController.clearRouteMovement(client.options, "follow_start");
         state.setFollowJump(false);
         activeFollow = request;
         start(client, player, target, activeFollow.actionData(), followStuckReplans,
@@ -358,28 +354,23 @@ class FollowController {
         Vec3d lookTarget = new Vec3d(predicted.x, Math.max(player.getEyeY() - 0.2, target.getY() + ROUTE_LOOK_HEIGHT), predicted.z);
 
         lookController.rotateToward(player, lookTarget);
-        simpleMovementController.clearDirectionalKeys(options);
-        options.forwardKey.setPressed(true);
-        routeExecutor.updateSprint(options, player.distanceTo(target));
-        updateFollowDirectJump(options, player, target);
+        boolean sprintPressed = routeExecutor.sprintPressed(options.sprintKey.isPressed(), player.distanceTo(target));
+        boolean jumpPressed = updateFollowDirectJump(player, target);
+        movementController.applyFollowDirect(options, sprintPressed, jumpPressed);
         movementDiagnostics.logMovement("follow_direct", options, player, waypoint, target.getY() - player.getY(), false, 0, 0);
     }
 
-    private void updateFollowDirectJump(GameOptions options, ClientPlayerEntity player, AbstractClientPlayerEntity target) {
+    private boolean updateFollowDirectJump(ClientPlayerEntity player, AbstractClientPlayerEntity target) {
         boolean flatGroundChase = Math.abs(target.getY() - player.getY()) < 0.5;
 
         if (!routeExecutor.canJump(player) || !flatGroundChase || player.distanceTo(target) <= FOLLOW_SPRINT_ENABLE_DISTANCE) {
-            options.jumpKey.setPressed(false);
             state.setFollowJump(false);
-            return;
+            return false;
         }
 
-        if (routeExecutor.pressJumpIfReady(options)) {
-            return;
-        }
-
-        options.jumpKey.setPressed(false);
-        state.setFollowJump(false);
+        boolean jumpPressed = routeExecutor.pressJumpIfReady();
+        state.setFollowJump(jumpPressed);
+        return jumpPressed;
     }
 
     private boolean isFollowRouteStuck(MinecraftClient client, ClientPlayerEntity player, AbstractClientPlayerEntity target,

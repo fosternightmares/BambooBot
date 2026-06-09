@@ -6,8 +6,6 @@ import java.util.function.Consumer;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.option.GameOptions;
-import net.minecraft.client.option.KeyBinding;
 
 class SimpleMovementController {
     private static final double APPROACH_TARGET_DISTANCE = 2.5;
@@ -15,14 +13,17 @@ class SimpleMovementController {
     private final BotState state;
     private final LookController lookController;
     private final RouteExecutor routeExecutor;
+    private final MovementController movementController;
     private ActionRequest timedMovement;
     private int timedMovementTicksRemaining;
     private ActionRequest activeApproach;
 
-    SimpleMovementController(BotState state, LookController lookController, RouteExecutor routeExecutor) {
+    SimpleMovementController(BotState state, LookController lookController, RouteExecutor routeExecutor,
+                             MovementController movementController) {
         this.state = state;
         this.lookController = lookController;
         this.routeExecutor = routeExecutor;
+        this.movementController = movementController;
     }
 
     void tickApproach(MinecraftClient client, Consumer<MinecraftClient> stopMovement,
@@ -59,7 +60,7 @@ class SimpleMovementController {
         }
 
         lookController.rotateToward(player, target.getEyePos());
-        client.options.forwardKey.setPressed(true);
+        movementController.pressForward(client.options, "approach_tick");
     }
 
     void tickTimedMovement(MinecraftClient client, Consumer<MinecraftClient> stopMovement) {
@@ -95,12 +96,8 @@ class SimpleMovementController {
         activeApproach = null;
         cancelConflictingMovement.run();
         routeExecutor.resetJumpCooldown();
-        GameOptions options = client.options;
-        clearDirectionalKeys(options);
-        options.jumpKey.setPressed(false);
         state.setFollowJump(false);
-        options.sprintKey.setPressed(false);
-        movementKey(options, request.actionType()).setPressed(true);
+        movementController.applyManualMovement(client.options, request.actionType());
 
         if (request.durationTicks() > 0) {
             timedMovement = request;
@@ -143,12 +140,9 @@ class SimpleMovementController {
         timedMovementTicksRemaining = 0;
         cancelConflictingMovement.run();
         routeExecutor.resetJumpCooldown();
-        clearDirectionalKeys(client.options);
-        client.options.jumpKey.setPressed(false);
         state.setFollowJump(false);
-        client.options.sprintKey.setPressed(false);
         lookController.rotateToward(player, target.getEyePos());
-        client.options.forwardKey.setPressed(true);
+        movementController.applyForwardNudge(client.options);
         activeApproach = request;
         state.queueChatMessage("approaching " + request.actionData());
     }
@@ -168,20 +162,4 @@ class SimpleMovementController {
         timedMovementTicksRemaining = 0;
     }
 
-    void clearDirectionalKeys(GameOptions options) {
-        options.forwardKey.setPressed(false);
-        options.backKey.setPressed(false);
-        options.leftKey.setPressed(false);
-        options.rightKey.setPressed(false);
-    }
-
-    private KeyBinding movementKey(GameOptions options, ActionRequest.ActionType actionType) {
-        return switch (actionType) {
-            case FORWARD -> options.forwardKey;
-            case BACK -> options.backKey;
-            case LEFT -> options.leftKey;
-            case RIGHT -> options.rightKey;
-            default -> throw new IllegalArgumentException("Not a movement action: " + actionType);
-        };
-    }
 }

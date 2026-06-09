@@ -8,7 +8,6 @@ import com.foster.bambooclientbot.state.GotoTarget;
 import java.util.List;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.option.GameOptions;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 
@@ -26,6 +25,7 @@ class GotoController {
     private final RouteExecutor routeExecutor;
     private final MovementRecovery movementRecovery;
     private final MovementDiagnostics movementDiagnostics;
+    private final MovementController movementController;
     private ActionRequest activeGoto;
     private List<BlockPos> activeGotoRoute = List.of();
     private int activeGotoRouteIndex;
@@ -33,13 +33,14 @@ class GotoController {
 
     GotoController(BotState state, PathPlanner pathPlanner, LookController lookController,
                    RouteExecutor routeExecutor, MovementRecovery movementRecovery,
-                   MovementDiagnostics movementDiagnostics) {
+                   MovementDiagnostics movementDiagnostics, MovementController movementController) {
         this.state = state;
         this.pathPlanner = pathPlanner;
         this.lookController = lookController;
         this.routeExecutor = routeExecutor;
         this.movementRecovery = movementRecovery;
         this.movementDiagnostics = movementDiagnostics;
+        this.movementController = movementController;
     }
 
     void tick(MinecraftClient client, Runnable stopMovement) {
@@ -89,7 +90,9 @@ class GotoController {
                 : lookController.routePreviewGazeTarget(player, activeGotoRoute, activeGotoRouteIndex);
         lookController.rotateForNavigation(player, steeringTarget, gazeTarget);
         routeExecutor.tickJumpCooldown();
-        routeExecutor.executeGotoRoute(client.options, player, waypoint, horizontalDistance);
+        RouteExecutor.RouteMovement movement = routeExecutor.gotoRouteMovement(player, waypoint, horizontalDistance,
+                client.options.sprintKey.isPressed());
+        movementController.applyRouteMovement(client.options, movement, "goto");
         movementDiagnostics.logMovement("goto", client.options, player, waypoint, waypoint.getY() - player.getY(),
                 false, activeGotoRouteIndex, activeGotoRoute.size());
     }
@@ -138,8 +141,7 @@ class GotoController {
             return;
         }
 
-        clearDirectionalKeys(client.options);
-        client.options.jumpKey.setPressed(false);
+        movementController.clearRouteMovement(client.options, "goto_start");
         state.setFollowJump(false);
         activeGotoRoute = plan.path();
         activeGotoRouteIndex = activeGotoRoute.size() > 1 ? 1 : 0;
@@ -279,10 +281,4 @@ class GotoController {
         return Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
     }
 
-    private void clearDirectionalKeys(GameOptions options) {
-        options.forwardKey.setPressed(false);
-        options.backKey.setPressed(false);
-        options.leftKey.setPressed(false);
-        options.rightKey.setPressed(false);
-    }
 }

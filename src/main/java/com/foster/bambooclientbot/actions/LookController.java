@@ -1,5 +1,6 @@
 package com.foster.bambooclientbot.actions;
 
+import com.foster.bambooclientbot.logging.BambooBotLog;
 import java.util.List;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerEntity;
@@ -19,8 +20,16 @@ class LookController {
 
     private Vec3d stableGazeTarget;
     private long lastGazeTargetUpdateMillis;
+    private int lookRequestCount;
+    private boolean lookConflictLogged;
+
+    void beginTick() {
+        lookRequestCount = 0;
+        lookConflictLogged = false;
+    }
 
     void rotateToward(ClientPlayerEntity player, Vec3d targetPosition) {
+        recordLookRequest("direct");
         Angles angles = anglesTo(player, targetPosition);
 
         stableGazeTarget = targetPosition;
@@ -32,6 +41,7 @@ class LookController {
     }
 
     void rotateForNavigation(ClientPlayerEntity player, Vec3d steeringTarget, Vec3d gazeTarget) {
+        recordLookRequest("navigation");
         Angles steeringAngles = anglesTo(player, steeringTarget);
         Vec3d stabilizedGazeTarget = stabilizedGazeTarget(gazeTarget);
         Angles gazeAngles = anglesTo(player, stabilizedGazeTarget);
@@ -184,6 +194,15 @@ class LookController {
         }
 
         return wrapped;
+    }
+
+    private void recordLookRequest(String source) {
+        lookRequestCount++;
+
+        if (lookRequestCount > 1 && !lookConflictLogged) {
+            lookConflictLogged = true;
+            BambooBotLog.warn("LOOK_CONFLICT count=" + lookRequestCount + " source=" + source);
+        }
     }
 
     private record Angles(float yaw, float pitch) {
