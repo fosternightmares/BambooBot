@@ -103,13 +103,7 @@ public class GotoBehavior {
 
         if (horizontalDistance <= GOTO_HORIZONTAL_ARRIVAL_DISTANCE
                 && verticalDifference <= GOTO_VERTICAL_ARRIVAL_DISTANCE) {
-            stopMovement.run();
-            activeGoto.setStatus(ActionRequest.ActionStatus.COMPLETE);
-            state.setLastGotoResult(new GotoResult(target, "success", ""));
-            state.clearActiveGoto();
-            clearActiveRoute();
-            resetSegmentState();
-            lookController.clearNavigationGaze();
+            completeGoto(target, stopMovement);
             return;
         }
 
@@ -180,11 +174,7 @@ public class GotoBehavior {
             return;
         }
 
-        cancel("goto_cancelled");
-        gotoStuckReplans = 0;
-        resetSegmentState();
-        resetStuckTracking();
-        resetNoProgressState(client.player);
+        resetRuntimeForNewGoto(client.player);
         BlockPos start = client.player.getBlockPos();
         BlockPos targetPosition = BlockPos.ofFloored(target.x(), target.y(), target.z());
         PathPlanResult plan = initialPlan(client, start, targetPosition, target);
@@ -195,7 +185,7 @@ public class GotoBehavior {
             state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, lastSegmentFailureReason);
             state.clearActiveGoto();
             state.queueChatMessage("goto failed");
-            resetSegmentState();
+            resetRuntimeForInactiveGoto();
             return;
         }
 
@@ -213,7 +203,7 @@ public class GotoBehavior {
             state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, "none");
             state.clearActiveGoto();
             state.queueChatMessage("arrived");
-            resetSegmentState();
+            resetRuntimeForInactiveGoto();
             return;
         }
 
@@ -240,17 +230,15 @@ public class GotoBehavior {
     public void cancel(String reason) {
         if (activeGoto == null) {
             state.clearActiveGoto();
-            routeTransitionPending = false;
+            resetRuntimeForInactiveGoto();
             lookController.clearNavigationGaze();
             return;
         }
 
         activeGoto.setStatus(ActionRequest.ActionStatus.FAILED);
         state.setLastGotoResult(new GotoResult(activeGoto.gotoTarget(), "failed", reason));
-        clearActiveRoute();
-        resetSegmentState();
+        resetRuntimeForInactiveGoto();
         lookController.clearNavigationGaze();
-        resetStuckTracking();
         state.clearActiveGoto();
     }
 
@@ -319,10 +307,24 @@ public class GotoBehavior {
                     progressAgeTicks, recoveryAttempts, lastRecoveryAction, noProgress);
         }
         state.clearActiveGoto();
-        clearActiveRoute();
-        resetSegmentState();
+        resetRuntimeForInactiveGoto();
         lookController.clearNavigationGaze();
-        resetStuckTracking();
+    }
+
+    private void completeGoto(GotoTarget target, Runnable stopMovement) {
+        stopMovement.run();
+
+        if (activeGoto != null) {
+            activeGoto.setStatus(ActionRequest.ActionStatus.COMPLETE);
+        }
+
+        state.setLastGotoResult(new GotoResult(target, "success", ""));
+        state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, "none",
+                progressAgeTicks, recoveryAttempts, lastRecoveryAction, noProgress);
+        state.clearActiveGoto();
+        state.queueChatMessage("arrived");
+        resetRuntimeForInactiveGoto();
+        lookController.clearNavigationGaze();
     }
 
     private PathPlanResult initialPlan(MinecraftClient client, BlockPos start, BlockPos finalPosition, GotoTarget target) {
@@ -526,6 +528,22 @@ public class GotoBehavior {
                 gotoStuckReplans, movementRecovery.gotoStuckTicks(), segmentedGoto, activeSegmentTarget,
                 gotoSegmentIndex, lastSegmentFailureReason, progressAgeTicks, recoveryAttempts,
                 lastRecoveryAction, noProgress);
+    }
+
+    private void resetRuntimeForNewGoto(ClientPlayerEntity player) {
+        if (activeGoto != null) {
+            activeGoto.setStatus(ActionRequest.ActionStatus.FAILED);
+            state.setLastGotoResult(new GotoResult(activeGoto.gotoTarget(), "failed", "goto_cancelled"));
+        }
+
+        resetRuntimeForInactiveGoto();
+        resetNoProgressState(player);
+    }
+
+    private void resetRuntimeForInactiveGoto() {
+        clearActiveRoute();
+        resetSegmentState();
+        resetStuckTracking();
     }
 
     private void clearActiveRoute() {
