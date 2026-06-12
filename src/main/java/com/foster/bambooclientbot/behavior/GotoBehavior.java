@@ -22,7 +22,8 @@ public class GotoBehavior {
     private static final double GOTO_HORIZONTAL_ARRIVAL_DISTANCE = 1.5;
     private static final double GOTO_VERTICAL_ARRIVAL_DISTANCE = 2.0;
     private static final double GOTO_SEGMENT_ARRIVAL_DISTANCE = 1.5;
-    private static final double GOTO_WAYPOINT_DISTANCE = 0.8;
+    private static final double GOTO_ROUTE_ADVANCE_DISTANCE = 1.75;
+    private static final double GOTO_ROUTE_ADVANCE_VERTICAL_DISTANCE = 2.5;
     private static final double GOTO_WAYPOINT_RECOVERY_DISTANCE = 2.25;
     private static final double GOTO_WAYPOINT_RECOVERY_VERTICAL_DISTANCE = 2.5;
     private static final double GOTO_FINAL_GAZE_DISTANCE = 4.0;
@@ -71,6 +72,9 @@ public class GotoBehavior {
     private int lastProgressRouteIndex = -1;
     private double lastProgressX;
     private double lastProgressZ;
+    private double lastWaypointDistance;
+    private double lastFinalTargetDistance;
+    private String lastAdvanceBlockedReason = "none";
 
     public GotoBehavior(BotState state, PathPlanner pathPlanner, LookController lookController,
                         RouteExecutor routeExecutor, MovementRecovery movementRecovery,
@@ -99,7 +103,7 @@ public class GotoBehavior {
         ClientPlayerEntity player = client.player;
         double horizontalDistance = horizontalDistance(player, target);
         double verticalDifference = Math.abs(player.getY() - target.y());
-        updateActiveGotoState(player, target);
+        lastFinalTargetDistance = horizontalDistance;
 
         if (horizontalDistance <= GOTO_HORIZONTAL_ARRIVAL_DISTANCE
                 && verticalDifference <= GOTO_VERTICAL_ARRIVAL_DISTANCE) {
@@ -113,6 +117,7 @@ public class GotoBehavior {
             resetStuckTracking();
             resetOscillationTracking(player);
         }
+        updateActiveGotoState(player, target);
         recordProgressState(player);
 
         double waypointDistance = horizontalDistance(player, waypoint);
@@ -194,6 +199,7 @@ public class GotoBehavior {
 
         double horizontalDistance = horizontalDistance(client.player, target);
         double verticalDifference = Math.abs(client.player.getY() - target.y());
+        lastFinalTargetDistance = horizontalDistance;
 
         if (horizontalDistance <= GOTO_HORIZONTAL_ARRIVAL_DISTANCE
                 && verticalDifference <= GOTO_VERTICAL_ARRIVAL_DISTANCE) {
@@ -223,6 +229,7 @@ public class GotoBehavior {
         resetStuckTracking();
         resetNoProgressTracking(client.player);
         activeGoto = request;
+        updateRouteAdvanceDiagnostics(client.player, activeGotoRoute, activeGotoRouteIndex);
         updateActiveGotoState(client.player, target);
         state.queueChatMessage("going to " + target.formatForChat());
     }
@@ -285,6 +292,7 @@ public class GotoBehavior {
         activatePlan(plan);
         resetStuckTracking();
         resetNoProgressTracking(player);
+        updateRouteAdvanceDiagnostics(player, activeGotoRoute, activeGotoRouteIndex);
         updateActiveGotoState(player, target);
         return true;
     }
@@ -300,11 +308,13 @@ public class GotoBehavior {
         if ("stuck".equals(reason)) {
             state.setLastGotoResult(new GotoResult(target, "stuck", ""));
             state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, "stuck",
-                    progressAgeTicks, recoveryAttempts, lastRecoveryAction, noProgress);
+                    progressAgeTicks, recoveryAttempts, lastRecoveryAction, noProgress, lastWaypointDistance,
+                    GOTO_ROUTE_ADVANCE_DISTANCE, lastAdvanceBlockedReason, lastFinalTargetDistance);
         } else {
             state.setLastGotoResult(new GotoResult(target, "failed", reason));
             state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, reason,
-                    progressAgeTicks, recoveryAttempts, lastRecoveryAction, noProgress);
+                    progressAgeTicks, recoveryAttempts, lastRecoveryAction, noProgress, lastWaypointDistance,
+                    GOTO_ROUTE_ADVANCE_DISTANCE, lastAdvanceBlockedReason, lastFinalTargetDistance);
         }
         state.clearActiveGoto();
         resetRuntimeForInactiveGoto();
@@ -320,7 +330,8 @@ public class GotoBehavior {
 
         state.setLastGotoResult(new GotoResult(target, "success", ""));
         state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, "none",
-                progressAgeTicks, recoveryAttempts, lastRecoveryAction, noProgress);
+                progressAgeTicks, recoveryAttempts, lastRecoveryAction, noProgress, lastWaypointDistance,
+                GOTO_ROUTE_ADVANCE_DISTANCE, lastAdvanceBlockedReason, lastFinalTargetDistance);
         state.clearActiveGoto();
         state.queueChatMessage("arrived");
         resetRuntimeForInactiveGoto();
@@ -371,6 +382,7 @@ public class GotoBehavior {
         activatePlan(plan);
         resetStuckTracking();
         resetNoProgressTracking(player);
+        updateRouteAdvanceDiagnostics(player, activeGotoRoute, activeGotoRouteIndex);
         updateActiveGotoState(player, target);
         return true;
     }
@@ -527,7 +539,8 @@ public class GotoBehavior {
         state.setActiveGoto(target, horizontalDistance(player, target), activeGotoRouteIndex, activeGotoRoute.size(),
                 gotoStuckReplans, movementRecovery.gotoStuckTicks(), segmentedGoto, activeSegmentTarget,
                 gotoSegmentIndex, lastSegmentFailureReason, progressAgeTicks, recoveryAttempts,
-                lastRecoveryAction, noProgress);
+                lastRecoveryAction, noProgress, lastWaypointDistance, GOTO_ROUTE_ADVANCE_DISTANCE,
+                lastAdvanceBlockedReason, lastFinalTargetDistance);
     }
 
     private void resetRuntimeForNewGoto(ClientPlayerEntity player) {
@@ -563,6 +576,9 @@ public class GotoBehavior {
         lastProgressRouteIndex = -1;
         lastProgressX = 0.0;
         lastProgressZ = 0.0;
+        lastWaypointDistance = 0.0;
+        lastFinalTargetDistance = 0.0;
+        lastAdvanceBlockedReason = "none";
     }
 
     private void resetSegmentState() {
@@ -590,6 +606,7 @@ public class GotoBehavior {
             routeIndex++;
         }
 
+        updateRouteAdvanceDiagnostics(player, route, routeIndex);
         return routeIndex;
     }
 
@@ -756,6 +773,7 @@ public class GotoBehavior {
         resetStuckTracking();
         resetOscillationTracking(player);
         resetNoProgressTracking(player);
+        updateRouteAdvanceDiagnostics(player, activeGotoRoute, activeGotoRouteIndex);
         return true;
     }
 
@@ -801,11 +819,42 @@ public class GotoBehavior {
 
     private boolean waypointReached(ClientPlayerEntity player, BlockPos waypoint, boolean recoveryDistance) {
         if (!recoveryDistance) {
-            return horizontalDistance(player, waypoint) <= GOTO_WAYPOINT_DISTANCE;
+            return horizontalDistance(player, waypoint) <= GOTO_ROUTE_ADVANCE_DISTANCE
+                    && Math.abs(player.getY() - waypoint.getY()) <= GOTO_ROUTE_ADVANCE_VERTICAL_DISTANCE;
         }
 
         return horizontalDistance(player, waypoint) <= GOTO_WAYPOINT_RECOVERY_DISTANCE
                 && Math.abs(player.getY() - waypoint.getY()) <= GOTO_WAYPOINT_RECOVERY_VERTICAL_DISTANCE;
+    }
+
+    private void updateRouteAdvanceDiagnostics(ClientPlayerEntity player, List<BlockPos> route, int routeIndex) {
+        if (route.isEmpty()) {
+            lastWaypointDistance = 0.0;
+            lastAdvanceBlockedReason = "route_empty";
+            return;
+        }
+
+        BlockPos waypoint = route.get(routeIndex);
+        lastWaypointDistance = horizontalDistance(player, waypoint);
+
+        if (routeIndex >= route.size() - 1) {
+            lastAdvanceBlockedReason = "route_end";
+            return;
+        }
+
+        double verticalDelta = Math.abs(player.getY() - waypoint.getY());
+
+        if (lastWaypointDistance > GOTO_ROUTE_ADVANCE_DISTANCE) {
+            lastAdvanceBlockedReason = "horizontal_distance";
+            return;
+        }
+
+        if (verticalDelta > GOTO_ROUTE_ADVANCE_VERTICAL_DISTANCE) {
+            lastAdvanceBlockedReason = "vertical_delta";
+            return;
+        }
+
+        lastAdvanceBlockedReason = "within_advance";
     }
 
     private void resetOscillationTracking(ClientPlayerEntity player) {
