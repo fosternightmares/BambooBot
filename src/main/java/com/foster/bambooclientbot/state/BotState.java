@@ -42,10 +42,18 @@ public class BotState {
     private GotoTarget activeGotoSegmentTarget;
     private int activeGotoSegmentIndex;
     private String activeGotoLastFailureReason = "none";
+    private int activeGotoProgressAgeTicks;
+    private int activeGotoRecoveryAttempts;
+    private String activeGotoLastRecoveryAction = "none";
+    private boolean activeGotoNoProgress;
     private boolean lastGotoLongRange;
     private GotoTarget lastGotoSegmentTarget;
     private int lastGotoSegmentIndex;
     private String lastGotoStartupFailureReason = "none";
+    private int lastGotoProgressAgeTicks;
+    private int lastGotoRecoveryAttempts;
+    private String lastGotoLastRecoveryAction = "none";
+    private boolean lastGotoNoProgress;
     private GotoResult lastGotoResult;
     private String activeFollowTarget = "";
     private int activeFollowRouteIndex;
@@ -194,6 +202,14 @@ public class BotState {
     public void setActiveGoto(GotoTarget target, double distance, int routeIndex, int routeLength,
                               int replans, int stuckTicks, boolean segmented, GotoTarget segmentTarget,
                               int segmentIndex, String lastFailureReason) {
+        setActiveGoto(target, distance, routeIndex, routeLength, replans, stuckTicks, segmented, segmentTarget,
+                segmentIndex, lastFailureReason, 0, 0, "none", false);
+    }
+
+    public void setActiveGoto(GotoTarget target, double distance, int routeIndex, int routeLength,
+                              int replans, int stuckTicks, boolean segmented, GotoTarget segmentTarget,
+                              int segmentIndex, String lastFailureReason, int progressAgeTicks,
+                              int recoveryAttempts, String lastRecoveryAction, boolean noProgress) {
         this.activeGotoTarget = target;
         this.activeGotoDistance = distance;
         this.activeGotoRouteIndex = routeIndex;
@@ -204,6 +220,10 @@ public class BotState {
         this.activeGotoSegmentTarget = segmentTarget;
         this.activeGotoSegmentIndex = segmentIndex;
         this.activeGotoLastFailureReason = safeValue(lastFailureReason);
+        this.activeGotoProgressAgeTicks = progressAgeTicks;
+        this.activeGotoRecoveryAttempts = recoveryAttempts;
+        this.activeGotoLastRecoveryAction = safeValue(lastRecoveryAction);
+        this.activeGotoNoProgress = noProgress;
     }
 
     public void clearActiveGoto() {
@@ -217,6 +237,10 @@ public class BotState {
         activeGotoSegmentTarget = null;
         activeGotoSegmentIndex = 0;
         activeGotoLastFailureReason = "none";
+        activeGotoProgressAgeTicks = 0;
+        activeGotoRecoveryAttempts = 0;
+        activeGotoLastRecoveryAction = "none";
+        activeGotoNoProgress = false;
     }
 
     public void setLastGotoResult(GotoResult lastGotoResult) {
@@ -225,10 +249,21 @@ public class BotState {
 
     public void setLastGotoDiagnostics(boolean longRange, GotoTarget segmentTarget, int segmentIndex,
                                        String startupFailureReason) {
+        setLastGotoDiagnostics(longRange, segmentTarget, segmentIndex, startupFailureReason,
+                0, 0, "none", false);
+    }
+
+    public void setLastGotoDiagnostics(boolean longRange, GotoTarget segmentTarget, int segmentIndex,
+                                       String startupFailureReason, int progressAgeTicks, int recoveryAttempts,
+                                       String lastRecoveryAction, boolean noProgress) {
         this.lastGotoLongRange = longRange;
         this.lastGotoSegmentTarget = segmentTarget;
         this.lastGotoSegmentIndex = segmentIndex;
         this.lastGotoStartupFailureReason = safeValue(startupFailureReason);
+        this.lastGotoProgressAgeTicks = progressAgeTicks;
+        this.lastGotoRecoveryAttempts = recoveryAttempts;
+        this.lastGotoLastRecoveryAction = safeValue(lastRecoveryAction);
+        this.lastGotoNoProgress = noProgress;
     }
 
     public String gotoStatus() {
@@ -279,7 +314,11 @@ public class BotState {
                     + " finalTarget=" + activeGotoTarget.format()
                     + " segmentTarget=" + (activeGotoSegmentTarget == null ? "none" : activeGotoSegmentTarget.format())
                     + " segmentIndex=" + activeGotoSegmentIndex
-                    + " lastFailure=" + activeGotoLastFailureReason;
+                    + " lastFailure=" + activeGotoLastFailureReason
+                    + " progressAgeTicks=" + activeGotoProgressAgeTicks
+                    + " recoveryAttempts=" + activeGotoRecoveryAttempts
+                    + " lastRecoveryAction=" + activeGotoLastRecoveryAction
+                    + " noProgress=" + activeGotoNoProgress;
         }
 
         if (activeFollowTarget != null && !activeFollowTarget.isBlank()) {
@@ -297,7 +336,11 @@ public class BotState {
                 ? "none" : lastGotoResult.target().format())
                 + " segmentTarget=" + (lastGotoSegmentTarget == null ? "none" : lastGotoSegmentTarget.format())
                 + " segmentIndex=" + lastGotoSegmentIndex
-                + " lastFailure=" + lastGotoStartupFailureReason;
+                + " lastFailure=" + lastGotoStartupFailureReason
+                + " progressAgeTicks=" + lastGotoProgressAgeTicks
+                + " recoveryAttempts=" + lastGotoRecoveryAttempts
+                + " lastRecoveryAction=" + lastGotoLastRecoveryAction
+                + " noProgress=" + lastGotoNoProgress;
     }
 
     public String recentRouteStatus() {

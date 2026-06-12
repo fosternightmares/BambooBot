@@ -30,6 +30,11 @@ public class GotoBehavior {
     private static final double OSCILLATION_POSITION_EPSILON = 0.35;
     private static final int OSCILLATION_ADVANCE_TICKS = 4;
     private static final int OSCILLATION_REPLAN_TICKS = 10;
+    private static final double NO_PROGRESS_DISTANCE_EPSILON = 0.75;
+    private static final int NO_PROGRESS_LOCAL_RECOVERY_TICKS = 40;
+    private static final int NO_PROGRESS_ROUTE_REPLAN_TICKS = 80;
+    private static final int NO_PROGRESS_SEGMENT_REPLAN_TICKS = 120;
+    private static final int NO_PROGRESS_FAIL_TICKS = 160;
     private static final int ROUTE_STUCK_TICKS = 60;
     private static final int ROUTE_MAX_STUCK_REPLANS = 3;
     private static final int MAX_SEGMENT_PLAN_FAILURES = 3;
@@ -59,6 +64,13 @@ public class GotoBehavior {
     private int gotoOscillationTicks;
     private double lastGotoOscillationX;
     private double lastGotoOscillationZ;
+    private int progressAgeTicks;
+    private int recoveryAttempts;
+    private String lastRecoveryAction = "none";
+    private boolean noProgress;
+    private int lastProgressRouteIndex = -1;
+    private double lastProgressX;
+    private double lastProgressZ;
 
     public GotoBehavior(BotState state, PathPlanner pathPlanner, LookController lookController,
                         RouteExecutor routeExecutor, MovementRecovery movementRecovery,
@@ -107,6 +119,7 @@ public class GotoBehavior {
             resetStuckTracking();
             resetOscillationTracking(player);
         }
+        recordProgressState(player);
 
         double waypointDistance = horizontalDistance(player, waypoint);
         if (isRouteStuck(client, player, target, waypointDistance, stopMovement)) {
@@ -141,6 +154,9 @@ public class GotoBehavior {
         if (handleRouteOscillation(client, player, target, waypoint, stopMovement)) {
             return;
         }
+        if (handleNoProgress(client, player, target, waypoint, stopMovement)) {
+            return;
+        }
         routeExecutor.tickJumpCooldown();
         RouteExecutor.RouteMovement movement = routeExecutor.gotoRouteMovement(player, waypoint, horizontalDistance,
                 client.options.sprintKey.isPressed());
@@ -168,6 +184,7 @@ public class GotoBehavior {
         gotoStuckReplans = 0;
         resetSegmentState();
         resetStuckTracking();
+        resetNoProgressState(client.player);
         BlockPos start = client.player.getBlockPos();
         BlockPos targetPosition = BlockPos.ofFloored(target.x(), target.y(), target.z());
         PathPlanResult plan = initialPlan(client, start, targetPosition, target);
@@ -214,6 +231,7 @@ public class GotoBehavior {
                 true
         );
         resetStuckTracking();
+        resetNoProgressTracking(client.player);
         activeGoto = request;
         updateActiveGotoState(client.player, target);
         state.queueChatMessage("going to " + target.formatForChat());
@@ -262,23 +280,25 @@ public class GotoBehavior {
         return true;
     }
 
-    private void replanRoute(MinecraftClient client, ClientPlayerEntity player, GotoTarget target,
+    private boolean replanRoute(MinecraftClient client, ClientPlayerEntity player, GotoTarget target,
                              Runnable stopMovement) {
         if (client.world == null || activeGoto == null) {
             fail(client, "movement_unavailable", stopMovement);
-            return;
+            return false;
         }
 
         PathPlanResult plan = planSegment(client, player.getBlockPos(), target, currentSegmentTargetPosition(target));
 
         if (!plan.found()) {
             lastSegmentFailureReason = plan.reason();
-            return;
+            return false;
         }
 
         activatePlan(plan);
         resetStuckTracking();
+        resetNoProgressTracking(player);
         updateActiveGotoState(player, target);
+        return true;
     }
 
     private void fail(MinecraftClient client, String reason, Runnable stopMovement) {
@@ -291,10 +311,12 @@ public class GotoBehavior {
         stopMovement.run();
         if ("stuck".equals(reason)) {
             state.setLastGotoResult(new GotoResult(target, "stuck", ""));
-            state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, "stuck");
+            state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, "stuck",
+                    progressAgeTicks, recoveryAttempts, lastRecoveryAction, noProgress);
         } else {
             state.setLastGotoResult(new GotoResult(target, "failed", reason));
-            state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, reason);
+            state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, reason,
+                    progressAgeTicks, recoveryAttempts, lastRecoveryAction, noProgress);
         }
         state.clearActiveGoto();
         clearActiveRoute();
@@ -346,6 +368,7 @@ public class GotoBehavior {
 
         activatePlan(plan);
         resetStuckTracking();
+        resetNoProgressTracking(player);
         updateActiveGotoState(player, target);
         return true;
     }
@@ -501,7 +524,8 @@ public class GotoBehavior {
     private void updateActiveGotoState(ClientPlayerEntity player, GotoTarget target) {
         state.setActiveGoto(target, horizontalDistance(player, target), activeGotoRouteIndex, activeGotoRoute.size(),
                 gotoStuckReplans, movementRecovery.gotoStuckTicks(), segmentedGoto, activeSegmentTarget,
-                gotoSegmentIndex, lastSegmentFailureReason);
+                gotoSegmentIndex, lastSegmentFailureReason, progressAgeTicks, recoveryAttempts,
+                lastRecoveryAction, noProgress);
     }
 
     private void clearActiveRoute() {
@@ -514,6 +538,13 @@ public class GotoBehavior {
         gotoOscillationTicks = 0;
         lastGotoOscillationX = 0.0;
         lastGotoOscillationZ = 0.0;
+        progressAgeTicks = 0;
+        recoveryAttempts = 0;
+        lastRecoveryAction = "none";
+        noProgress = false;
+        lastProgressRouteIndex = -1;
+        lastProgressX = 0.0;
+        lastProgressZ = 0.0;
     }
 
     private void resetSegmentState() {
@@ -576,6 +607,7 @@ public class GotoBehavior {
         if (gotoOscillationTicks >= OSCILLATION_ADVANCE_TICKS && tryAdvanceNearWaypoint(player, waypoint)) {
             resetStuckTracking();
             resetOscillationTracking(player);
+            resetNoProgressTracking(player);
             updateActiveGotoState(player, target);
             return true;
         }
@@ -595,6 +627,142 @@ public class GotoBehavior {
         }
 
         return false;
+    }
+
+    private void recordProgressState(ClientPlayerEntity player) {
+        if (lastProgressRouteIndex < 0) {
+            lastProgressRouteIndex = activeGotoRouteIndex;
+            lastProgressX = player.getX();
+            lastProgressZ = player.getZ();
+            progressAgeTicks = 0;
+            noProgress = false;
+            return;
+        }
+
+        boolean routeAdvanced = activeGotoRouteIndex > lastProgressRouteIndex;
+        boolean positionAdvanced = horizontalDistance(player.getX(), player.getZ(), lastProgressX, lastProgressZ)
+                >= NO_PROGRESS_DISTANCE_EPSILON;
+
+        if (routeAdvanced || positionAdvanced) {
+            lastProgressRouteIndex = activeGotoRouteIndex;
+            lastProgressX = player.getX();
+            lastProgressZ = player.getZ();
+            progressAgeTicks = 0;
+            recoveryAttempts = 0;
+            noProgress = false;
+            return;
+        }
+
+        progressAgeTicks++;
+        noProgress = progressAgeTicks >= NO_PROGRESS_LOCAL_RECOVERY_TICKS || gotoOscillationTicks > 0;
+    }
+
+    private boolean handleNoProgress(MinecraftClient client, ClientPlayerEntity player, GotoTarget target,
+                                     BlockPos waypoint, Runnable stopMovement) {
+        if (progressAgeTicks < NO_PROGRESS_LOCAL_RECOVERY_TICKS) {
+            return false;
+        }
+
+        noProgress = true;
+
+        if (progressAgeTicks >= NO_PROGRESS_FAIL_TICKS && recoveryAttempts >= 3) {
+            fail(client, noProgressReason(player), stopMovement);
+            return true;
+        }
+
+        if (progressAgeTicks >= NO_PROGRESS_SEGMENT_REPLAN_TICKS && recoveryAttempts < 3) {
+            recoveryAttempts = 3;
+            lastRecoveryAction = "segment_replan";
+
+            if (replanCurrentSegment(client, player, target)) {
+                resetNoProgressTracking(player);
+                updateActiveGotoState(player, target);
+                return true;
+            }
+
+            lastRecoveryAction = "segment_replan_failed";
+            lastSegmentFailureReason = "segment_failed";
+            return false;
+        }
+
+        if (progressAgeTicks >= NO_PROGRESS_ROUTE_REPLAN_TICKS && recoveryAttempts < 2) {
+            recoveryAttempts = 2;
+            lastRecoveryAction = "route_replan";
+
+            if (replanRoute(client, player, target, stopMovement)) {
+                updateActiveGotoState(player, target);
+                return true;
+            }
+
+            lastRecoveryAction = "route_replan_failed";
+            lastSegmentFailureReason = "replan_failed";
+            return false;
+        }
+
+        if (recoveryAttempts < 1) {
+            recoveryAttempts = 1;
+
+            if (tryAdvanceNearWaypoint(player, waypoint)) {
+                lastRecoveryAction = "advance_waypoint";
+                routeTransitionPending = true;
+                resetStuckTracking();
+                resetOscillationTracking(player);
+                resetNoProgressTracking(player);
+                updateActiveGotoState(player, target);
+                return true;
+            }
+
+            lastRecoveryAction = "refresh_steering";
+            routeTransitionPending = true;
+            resetOscillationTracking(player);
+        }
+
+        updateActiveGotoState(player, target);
+        return false;
+    }
+
+    private boolean replanCurrentSegment(MinecraftClient client, ClientPlayerEntity player, GotoTarget target) {
+        if (client.world == null || activeGoto == null) {
+            lastSegmentFailureReason = "movement_unavailable";
+            return false;
+        }
+
+        PathPlanResult plan = planSegmentWithRetries(client, player.getBlockPos(), target, true);
+
+        if (!plan.found()) {
+            lastSegmentFailureReason = plan.reason();
+            return false;
+        }
+
+        activatePlan(plan);
+        resetStuckTracking();
+        resetOscillationTracking(player);
+        resetNoProgressTracking(player);
+        return true;
+    }
+
+    private String noProgressReason(ClientPlayerEntity player) {
+        if (player.isTouchingWater() || player.isSwimming()) {
+            return "water_stuck";
+        }
+
+        if (player.horizontalCollision) {
+            return "collision_stuck";
+        }
+
+        if (gotoOscillationTicks > 0) {
+            return "oscillation";
+        }
+
+        if ("segment_replan_failed".equals(lastRecoveryAction)) {
+            return "segment_failed";
+        }
+
+        if ("route_replan_failed".equals(lastRecoveryAction)) {
+            return "replan_failed";
+        }
+
+        return "no_progress";
     }
 
     private boolean tryAdvanceNearWaypoint(ClientPlayerEntity player, BlockPos waypoint) {
@@ -631,6 +799,23 @@ public class GotoBehavior {
             lastGotoOscillationX = player.getX();
             lastGotoOscillationZ = player.getZ();
         }
+    }
+
+    private void resetNoProgressTracking(ClientPlayerEntity player) {
+        progressAgeTicks = 0;
+        noProgress = false;
+        lastProgressRouteIndex = activeGotoRouteIndex;
+
+        if (player != null) {
+            lastProgressX = player.getX();
+            lastProgressZ = player.getZ();
+        }
+    }
+
+    private void resetNoProgressState(ClientPlayerEntity player) {
+        recoveryAttempts = 0;
+        lastRecoveryAction = "none";
+        resetNoProgressTracking(player);
     }
 
     private void resetStuckTracking() {
