@@ -11,6 +11,7 @@ import com.foster.bambooclientbot.navigation.PathPlanner;
 import com.foster.bambooclientbot.state.BotState;
 import com.foster.bambooclientbot.state.GotoResult;
 import com.foster.bambooclientbot.state.GotoTarget;
+import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
@@ -159,6 +160,7 @@ public class GotoBehavior {
         if (!plan.found()) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
             state.setLastGotoResult(new GotoResult(target, "failed", lastSegmentFailureReason));
+            state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, lastSegmentFailureReason);
             state.clearActiveGoto();
             state.queueChatMessage("goto failed");
             resetSegmentState();
@@ -176,6 +178,7 @@ public class GotoBehavior {
             stopMovement.run();
             request.setStatus(ActionRequest.ActionStatus.COMPLETE);
             state.setLastGotoResult(new GotoResult(target, "success", ""));
+            state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, "none");
             state.clearActiveGoto();
             state.queueChatMessage("arrived");
             resetSegmentState();
@@ -273,8 +276,10 @@ public class GotoBehavior {
         stopMovement.run();
         if ("stuck".equals(reason)) {
             state.setLastGotoResult(new GotoResult(target, "stuck", ""));
+            state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, "stuck");
         } else {
             state.setLastGotoResult(new GotoResult(target, "failed", reason));
+            state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, reason);
         }
         state.clearActiveGoto();
         clearActiveRoute();
@@ -339,15 +344,26 @@ public class GotoBehavior {
 
         while (segmentPlanFailures <= MAX_SEGMENT_PLAN_FAILURES && maxSegmentDistance >= MIN_SEGMENT_DISTANCE) {
             BlockPos segmentPosition = chooseSegmentTarget(start, target, maxSegmentDistance);
-            PathPlanResult plan = planSegment(client, start, target, segmentPosition);
+            for (BlockPos candidate : segmentCandidates(start, segmentPosition)) {
+                activeSegmentTarget = toGotoTarget(candidate);
+                currentSegmentIntermediate = true;
 
-            if (plan.found()) {
-                lastSegmentFailureReason = "none";
-                return plan;
+                if (!pathPlanner.isWalkable(client.world, candidate)) {
+                    lastSegmentFailureReason = "segment_not_walkable";
+                    continue;
+                }
+
+                PathPlanResult plan = planSegment(client, start, target, candidate);
+
+                if (plan.found()) {
+                    lastSegmentFailureReason = "none";
+                    return plan;
+                }
+
+                lastSegmentFailureReason = plan.reason();
+                lastPlan = plan;
             }
 
-            lastSegmentFailureReason = plan.reason();
-            lastPlan = plan;
             segmentPlanFailures++;
 
             if (stuckReplan) {
@@ -394,6 +410,48 @@ public class GotoBehavior {
         double maxVerticalStep = Math.max(1.0, pathPlanner.maxDistanceFromStart() - SEGMENT_RANGE_MARGIN);
         double segmentY = start.getY() + Math.max(-maxVerticalStep, Math.min(maxVerticalStep, deltaY * ratio));
         return BlockPos.ofFloored(segmentX, segmentY, segmentZ);
+    }
+
+    private List<BlockPos> segmentCandidates(BlockPos start, BlockPos preferred) {
+        List<BlockPos> candidates = new ArrayList<>();
+        int[][] horizontalOffsets = {
+                {0, 0},
+                {1, 0}, {-1, 0}, {0, 1}, {0, -1},
+                {2, 0}, {-2, 0}, {0, 2}, {0, -2},
+                {1, 1}, {1, -1}, {-1, 1}, {-1, -1},
+                {4, 0}, {-4, 0}, {0, 4}, {0, -4},
+                {8, 0}, {-8, 0}, {0, 8}, {0, -8}
+        };
+        int[] yOffsetsFromStart = {0, -1, 1, -2, 2, -3, 3, -4, 4};
+        int[] yOffsetsFromPreferred = {0, -1, 1, -2, 2, -3, 3};
+
+        for (int[] horizontalOffset : horizontalOffsets) {
+            for (int yOffset : yOffsetsFromStart) {
+                addSegmentCandidate(candidates, start, new BlockPos(
+                        preferred.getX() + horizontalOffset[0],
+                        start.getY() + yOffset,
+                        preferred.getZ() + horizontalOffset[1]
+                ));
+            }
+
+            for (int yOffset : yOffsetsFromPreferred) {
+                addSegmentCandidate(candidates, start, new BlockPos(
+                        preferred.getX() + horizontalOffset[0],
+                        preferred.getY() + yOffset,
+                        preferred.getZ() + horizontalOffset[1]
+                ));
+            }
+        }
+
+        return candidates;
+    }
+
+    private void addSegmentCandidate(List<BlockPos> candidates, BlockPos start, BlockPos candidate) {
+        if (!withinLocalPlanningRange(start, candidate) || candidates.contains(candidate)) {
+            return;
+        }
+
+        candidates.add(candidate);
     }
 
     private boolean withinLocalPlanningRange(BlockPos start, BlockPos target) {

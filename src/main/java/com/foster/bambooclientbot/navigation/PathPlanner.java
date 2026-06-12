@@ -29,6 +29,10 @@ public class PathPlanner {
         return MAX_DISTANCE_FROM_START;
     }
 
+    public boolean isWalkable(World world, BlockPos position) {
+        return navigationGrid.evaluate(world, position) == Walkability.WALKABLE;
+    }
+
     public PathPlanResult plan(World world, BlockPos start, BlockPos target) {
         if (world == null || start == null || target == null) {
             return PathPlanResult.notFound("invalid_coordinates");
