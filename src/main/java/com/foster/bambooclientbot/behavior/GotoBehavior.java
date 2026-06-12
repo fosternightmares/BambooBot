@@ -23,7 +23,13 @@ public class GotoBehavior {
     private static final double GOTO_VERTICAL_ARRIVAL_DISTANCE = 2.0;
     private static final double GOTO_SEGMENT_ARRIVAL_DISTANCE = 1.5;
     private static final double GOTO_WAYPOINT_DISTANCE = 0.8;
+    private static final double GOTO_WAYPOINT_RECOVERY_DISTANCE = 2.25;
+    private static final double GOTO_WAYPOINT_RECOVERY_VERTICAL_DISTANCE = 2.5;
     private static final double GOTO_FINAL_GAZE_DISTANCE = 4.0;
+    private static final double OSCILLATION_STEERING_YAW_DEGREES = 150.0;
+    private static final double OSCILLATION_POSITION_EPSILON = 0.35;
+    private static final int OSCILLATION_ADVANCE_TICKS = 4;
+    private static final int OSCILLATION_REPLAN_TICKS = 10;
     private static final int ROUTE_STUCK_TICKS = 60;
     private static final int ROUTE_MAX_STUCK_REPLANS = 3;
     private static final int MAX_SEGMENT_PLAN_FAILURES = 3;
@@ -48,6 +54,11 @@ public class GotoBehavior {
     private boolean currentSegmentIntermediate;
     private int gotoSegmentIndex;
     private String lastSegmentFailureReason = "none";
+    private Float lastGotoSteeringYaw;
+    private int lastGotoOscillationRouteIndex = -1;
+    private int gotoOscillationTicks;
+    private double lastGotoOscillationX;
+    private double lastGotoOscillationZ;
 
     public GotoBehavior(BotState state, PathPlanner pathPlanner, LookController lookController,
                         RouteExecutor routeExecutor, MovementRecovery movementRecovery,
@@ -94,6 +105,7 @@ public class GotoBehavior {
         BlockPos waypoint = currentWaypoint(player);
         if (activeGotoRouteIndex != previousRouteIndex) {
             resetStuckTracking();
+            resetOscillationTracking(player);
         }
 
         double waypointDistance = horizontalDistance(player, waypoint);
@@ -126,6 +138,9 @@ public class GotoBehavior {
                 routeTransition
         );
         routeTransitionPending = false;
+        if (handleRouteOscillation(client, player, target, waypoint, stopMovement)) {
+            return;
+        }
         routeExecutor.tickJumpCooldown();
         RouteExecutor.RouteMovement movement = routeExecutor.gotoRouteMovement(player, waypoint, horizontalDistance,
                 client.options.sprintKey.isPressed());
@@ -494,6 +509,11 @@ public class GotoBehavior {
         activeGotoRoute = List.of();
         activeGotoRouteIndex = 0;
         routeTransitionPending = false;
+        lastGotoSteeringYaw = null;
+        lastGotoOscillationRouteIndex = -1;
+        gotoOscillationTicks = 0;
+        lastGotoOscillationX = 0.0;
+        lastGotoOscillationZ = 0.0;
     }
 
     private void resetSegmentState() {
@@ -517,11 +537,100 @@ public class GotoBehavior {
         int routeIndex = currentIndex;
 
         while (routeIndex < route.size() - 1
-                && horizontalDistance(player, route.get(routeIndex)) <= GOTO_WAYPOINT_DISTANCE) {
+                && waypointReached(player, route.get(routeIndex), false)) {
             routeIndex++;
         }
 
         return routeIndex;
+    }
+
+    private boolean handleRouteOscillation(MinecraftClient client, ClientPlayerEntity player, GotoTarget target,
+                                           BlockPos waypoint, Runnable stopMovement) {
+        LookController.NavigationMotion motion = lookController.lastNavigationMotion();
+
+        if (motion == null || activeGotoRouteIndex >= activeGotoRoute.size() - 1) {
+            resetOscillationTracking(player);
+            return false;
+        }
+
+        float steeringChange = lastGotoSteeringYaw == null
+                ? 0.0f
+                : yawDelta(lastGotoSteeringYaw, motion.steeringYaw());
+        boolean bigFlip = Math.abs(steeringChange) >= OSCILLATION_STEERING_YAW_DEGREES;
+        boolean sameRouteIndex = lastGotoOscillationRouteIndex == activeGotoRouteIndex;
+        boolean positionHeld = horizontalDistance(player.getX(), player.getZ(), lastGotoOscillationX,
+                lastGotoOscillationZ) <= OSCILLATION_POSITION_EPSILON;
+
+        lastGotoSteeringYaw = motion.steeringYaw();
+        lastGotoOscillationRouteIndex = activeGotoRouteIndex;
+
+        if (!bigFlip || !sameRouteIndex || !positionHeld) {
+            gotoOscillationTicks = 0;
+            lastGotoOscillationX = player.getX();
+            lastGotoOscillationZ = player.getZ();
+            return false;
+        }
+
+        gotoOscillationTicks++;
+
+        if (gotoOscillationTicks >= OSCILLATION_ADVANCE_TICKS && tryAdvanceNearWaypoint(player, waypoint)) {
+            resetStuckTracking();
+            resetOscillationTracking(player);
+            updateActiveGotoState(player, target);
+            return true;
+        }
+
+        if (gotoOscillationTicks >= OSCILLATION_REPLAN_TICKS) {
+            gotoStuckReplans++;
+
+            if (gotoStuckReplans > ROUTE_MAX_STUCK_REPLANS) {
+                fail(client, "stuck", stopMovement);
+                return true;
+            }
+
+            resetOscillationTracking(player);
+            resetStuckTracking();
+            replanRoute(client, player, target, stopMovement);
+            return true;
+        }
+
+        return false;
+    }
+
+    private boolean tryAdvanceNearWaypoint(ClientPlayerEntity player, BlockPos waypoint) {
+        if (!waypointReached(player, waypoint, true) || activeGotoRouteIndex >= activeGotoRoute.size() - 1) {
+            return false;
+        }
+
+        activeGotoRouteIndex++;
+
+        while (activeGotoRouteIndex < activeGotoRoute.size() - 1
+                && waypointReached(player, activeGotoRoute.get(activeGotoRouteIndex), true)) {
+            activeGotoRouteIndex++;
+        }
+
+        routeTransitionPending = true;
+        return true;
+    }
+
+    private boolean waypointReached(ClientPlayerEntity player, BlockPos waypoint, boolean recoveryDistance) {
+        if (!recoveryDistance) {
+            return horizontalDistance(player, waypoint) <= GOTO_WAYPOINT_DISTANCE;
+        }
+
+        return horizontalDistance(player, waypoint) <= GOTO_WAYPOINT_RECOVERY_DISTANCE
+                && Math.abs(player.getY() - waypoint.getY()) <= GOTO_WAYPOINT_RECOVERY_VERTICAL_DISTANCE;
+    }
+
+    private void resetOscillationTracking(ClientPlayerEntity player) {
+        gotoOscillationTicks = 0;
+        lastGotoSteeringYaw = null;
+        lastGotoOscillationRouteIndex = activeGotoRouteIndex;
+
+        if (player != null) {
+            lastGotoOscillationX = player.getX();
+            lastGotoOscillationZ = player.getZ();
+        }
     }
 
     private void resetStuckTracking() {
@@ -542,6 +651,31 @@ public class GotoBehavior {
         double deltaX = target.getX() + 0.5 - player.getX();
         double deltaZ = target.getZ() + 0.5 - player.getZ();
         return Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
+    }
+
+    private double horizontalDistance(double fromX, double fromZ, double toX, double toZ) {
+        double deltaX = toX - fromX;
+        double deltaZ = toZ - fromZ;
+        return Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
+    }
+
+    private float yawDelta(float current, float target) {
+        float delta = normalizeYaw(target) - normalizeYaw(current);
+        return normalizeYaw(delta);
+    }
+
+    private float normalizeYaw(float degrees) {
+        float wrapped = degrees % 360.0f;
+
+        if (wrapped >= 180.0f) {
+            wrapped -= 360.0f;
+        }
+
+        if (wrapped < -180.0f) {
+            wrapped += 360.0f;
+        }
+
+        return wrapped;
     }
 
 }
