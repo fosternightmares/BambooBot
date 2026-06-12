@@ -25,6 +25,10 @@ public class PathPlanner {
         this.navigationGrid = navigationGrid;
     }
 
+    public int maxDistanceFromStart() {
+        return MAX_DISTANCE_FROM_START;
+    }
+
     public PathPlanResult plan(World world, BlockPos start, BlockPos target) {
         if (world == null || start == null || target == null) {
             return PathPlanResult.notFound("invalid_coordinates");

@@ -38,6 +38,10 @@ public class BotState {
     private int activeGotoRouteLength;
     private int activeGotoReplans;
     private int activeGotoStuckTicks;
+    private boolean activeGotoSegmented;
+    private GotoTarget activeGotoSegmentTarget;
+    private int activeGotoSegmentIndex;
+    private String activeGotoLastFailureReason = "none";
     private GotoResult lastGotoResult;
     private String activeFollowTarget = "";
     private int activeFollowRouteIndex;
@@ -179,12 +183,23 @@ public class BotState {
 
     public void setActiveGoto(GotoTarget target, double distance, int routeIndex, int routeLength,
                               int replans, int stuckTicks) {
+        setActiveGoto(target, distance, routeIndex, routeLength, replans, stuckTicks,
+                false, null, 0, "none");
+    }
+
+    public void setActiveGoto(GotoTarget target, double distance, int routeIndex, int routeLength,
+                              int replans, int stuckTicks, boolean segmented, GotoTarget segmentTarget,
+                              int segmentIndex, String lastFailureReason) {
         this.activeGotoTarget = target;
         this.activeGotoDistance = distance;
         this.activeGotoRouteIndex = routeIndex;
         this.activeGotoRouteLength = routeLength;
         this.activeGotoReplans = replans;
         this.activeGotoStuckTicks = stuckTicks;
+        this.activeGotoSegmented = segmented;
+        this.activeGotoSegmentTarget = segmentTarget;
+        this.activeGotoSegmentIndex = segmentIndex;
+        this.activeGotoLastFailureReason = safeValue(lastFailureReason);
     }
 
     public void clearActiveGoto() {
@@ -194,6 +209,10 @@ public class BotState {
         activeGotoRouteLength = 0;
         activeGotoReplans = 0;
         activeGotoStuckTicks = 0;
+        activeGotoSegmented = false;
+        activeGotoSegmentTarget = null;
+        activeGotoSegmentIndex = 0;
+        activeGotoLastFailureReason = "none";
     }
 
     public void setLastGotoResult(GotoResult lastGotoResult) {
@@ -243,7 +262,12 @@ public class BotState {
                     + " routeLength=" + activeGotoRouteLength
                     + " routeResult=success"
                     + " stuckTicks=" + activeGotoStuckTicks
-                    + " replans=" + activeGotoReplans;
+                    + " replans=" + activeGotoReplans
+                    + " longRange=" + activeGotoSegmented
+                    + " finalTarget=" + activeGotoTarget.format()
+                    + " segmentTarget=" + (activeGotoSegmentTarget == null ? "none" : activeGotoSegmentTarget.format())
+                    + " segmentIndex=" + activeGotoSegmentIndex
+                    + " lastFailure=" + activeGotoLastFailureReason;
         }
 
         if (activeFollowTarget != null && !activeFollowTarget.isBlank()) {
