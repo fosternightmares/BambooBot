@@ -50,6 +50,8 @@ public class BotState {
     private double activeGotoRouteAdvanceDistance;
     private String activeGotoAdvanceBlockedReason = "none";
     private double activeGotoFinalTargetDistance;
+    private String activeGotoCompletionReason = "none";
+    private String activeGotoFailureReason = "none";
     private boolean lastGotoLongRange;
     private GotoTarget lastGotoSegmentTarget;
     private int lastGotoSegmentIndex;
@@ -62,6 +64,8 @@ public class BotState {
     private double lastGotoRouteAdvanceDistance;
     private String lastGotoAdvanceBlockedReason = "none";
     private double lastGotoFinalTargetDistance;
+    private String lastGotoCompletionReason = "none";
+    private String lastGotoFailureReason = "none";
     private GotoResult lastGotoResult;
     private String activeFollowTarget = "";
     private int activeFollowRouteIndex;
@@ -229,6 +233,19 @@ public class BotState {
                               int recoveryAttempts, String lastRecoveryAction, boolean noProgress,
                               double waypointDistance, double routeAdvanceDistance,
                               String advanceBlockedReason, double finalTargetDistance) {
+        setActiveGoto(target, distance, routeIndex, routeLength, replans, stuckTicks, segmented, segmentTarget,
+                segmentIndex, lastFailureReason, progressAgeTicks, recoveryAttempts, lastRecoveryAction,
+                noProgress, waypointDistance, routeAdvanceDistance, advanceBlockedReason, finalTargetDistance,
+                "none", lastFailureReason);
+    }
+
+    public void setActiveGoto(GotoTarget target, double distance, int routeIndex, int routeLength,
+                              int replans, int stuckTicks, boolean segmented, GotoTarget segmentTarget,
+                              int segmentIndex, String lastFailureReason, int progressAgeTicks,
+                              int recoveryAttempts, String lastRecoveryAction, boolean noProgress,
+                              double waypointDistance, double routeAdvanceDistance,
+                              String advanceBlockedReason, double finalTargetDistance,
+                              String completionReason, String failureReason) {
         this.activeGotoTarget = target;
         this.activeGotoDistance = distance;
         this.activeGotoRouteIndex = routeIndex;
@@ -247,6 +264,8 @@ public class BotState {
         this.activeGotoRouteAdvanceDistance = routeAdvanceDistance;
         this.activeGotoAdvanceBlockedReason = safeValue(advanceBlockedReason);
         this.activeGotoFinalTargetDistance = finalTargetDistance;
+        this.activeGotoCompletionReason = safeValue(completionReason);
+        this.activeGotoFailureReason = safeValue(failureReason);
     }
 
     public void clearActiveGoto() {
@@ -268,6 +287,8 @@ public class BotState {
         activeGotoRouteAdvanceDistance = 0.0;
         activeGotoAdvanceBlockedReason = "none";
         activeGotoFinalTargetDistance = 0.0;
+        activeGotoCompletionReason = "none";
+        activeGotoFailureReason = "none";
     }
 
     public void setLastGotoResult(GotoResult lastGotoResult) {
@@ -292,6 +313,17 @@ public class BotState {
                                        String lastRecoveryAction, boolean noProgress, double waypointDistance,
                                        double routeAdvanceDistance, String advanceBlockedReason,
                                        double finalTargetDistance) {
+        setLastGotoDiagnostics(longRange, segmentTarget, segmentIndex, startupFailureReason, progressAgeTicks,
+                recoveryAttempts, lastRecoveryAction, noProgress, waypointDistance, routeAdvanceDistance,
+                advanceBlockedReason, finalTargetDistance, "none", startupFailureReason);
+    }
+
+    public void setLastGotoDiagnostics(boolean longRange, GotoTarget segmentTarget, int segmentIndex,
+                                       String startupFailureReason, int progressAgeTicks, int recoveryAttempts,
+                                       String lastRecoveryAction, boolean noProgress, double waypointDistance,
+                                       double routeAdvanceDistance, String advanceBlockedReason,
+                                       double finalTargetDistance, String completionReason,
+                                       String failureReason) {
         this.lastGotoLongRange = longRange;
         this.lastGotoSegmentTarget = segmentTarget;
         this.lastGotoSegmentIndex = segmentIndex;
@@ -304,6 +336,8 @@ public class BotState {
         this.lastGotoRouteAdvanceDistance = routeAdvanceDistance;
         this.lastGotoAdvanceBlockedReason = safeValue(advanceBlockedReason);
         this.lastGotoFinalTargetDistance = finalTargetDistance;
+        this.lastGotoCompletionReason = safeValue(completionReason);
+        this.lastGotoFailureReason = safeValue(failureReason);
     }
 
     public String gotoStatus() {
@@ -362,7 +396,9 @@ public class BotState {
                     + " waypointDistance=" + formatDouble(activeGotoWaypointDistance)
                     + " routeAdvanceDistance=" + formatDouble(activeGotoRouteAdvanceDistance)
                     + " advanceBlockedReason=" + activeGotoAdvanceBlockedReason
-                    + " finalTargetDistance=" + formatDouble(activeGotoFinalTargetDistance);
+                    + " finalTargetDistance=" + formatDouble(activeGotoFinalTargetDistance)
+                    + " completionReason=" + activeGotoCompletionReason
+                    + " failureReason=" + activeGotoFailureReason;
         }
 
         if (activeFollowTarget != null && !activeFollowTarget.isBlank()) {
@@ -388,7 +424,9 @@ public class BotState {
                 + " waypointDistance=" + formatDouble(lastGotoWaypointDistance)
                 + " routeAdvanceDistance=" + formatDouble(lastGotoRouteAdvanceDistance)
                 + " advanceBlockedReason=" + lastGotoAdvanceBlockedReason
-                + " finalTargetDistance=" + formatDouble(lastGotoFinalTargetDistance);
+                + " finalTargetDistance=" + formatDouble(lastGotoFinalTargetDistance)
+                + " completionReason=" + lastGotoCompletionReason
+                + " failureReason=" + lastGotoFailureReason;
     }
 
     public String recentRouteStatus() {

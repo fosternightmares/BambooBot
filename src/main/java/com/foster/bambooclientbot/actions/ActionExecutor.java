@@ -182,7 +182,10 @@ public class ActionExecutor {
             state.setLastActionResult(request.actionType().name(), "failed", "exception");
             state.queueChatMessage("action failed");
         } finally {
-            state.clearActiveAction();
+            if (request.actionType() != ActionRequest.ActionType.GOTO_COORDINATES
+                    || request.actionStatus() != ActionRequest.ActionStatus.RUNNING) {
+                state.clearActiveAction();
+            }
         }
     }
 

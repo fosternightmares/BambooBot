@@ -75,6 +75,8 @@ public class GotoBehavior {
     private double lastWaypointDistance;
     private double lastFinalTargetDistance;
     private String lastAdvanceBlockedReason = "none";
+    private String lastCompletionReason = "none";
+    private String lastFailureReason = "none";
 
     public GotoBehavior(BotState state, PathPlanner pathPlanner, LookController lookController,
                         RouteExecutor routeExecutor, MovementRecovery movementRecovery,
@@ -107,7 +109,7 @@ public class GotoBehavior {
 
         if (horizontalDistance <= GOTO_HORIZONTAL_ARRIVAL_DISTANCE
                 && verticalDifference <= GOTO_VERTICAL_ARRIVAL_DISTANCE) {
-            completeGoto(target, stopMovement);
+            completeGoto(target, "target_distance", stopMovement);
             return;
         }
 
@@ -119,6 +121,11 @@ public class GotoBehavior {
         }
         updateActiveGotoState(player, target);
         recordProgressState(player);
+
+        if (routeEndReached(player, target)) {
+            completeGoto(target, "route_end", stopMovement);
+            return;
+        }
 
         double waypointDistance = horizontalDistance(player, waypoint);
         if (isRouteStuck(client, player, target, waypointDistance, stopMovement)) {
@@ -172,6 +179,9 @@ public class GotoBehavior {
         if (client == null || client.player == null || client.world == null || client.options == null || target == null) {
             request.setStatus(ActionRequest.ActionStatus.FAILED);
             state.setLastGotoResult(new GotoResult(target, "failed", "movement_unavailable"));
+            state.setLastGotoDiagnostics(false, null, 0, "movement_unavailable",
+                    0, 0, "none", false, 0.0, GOTO_ROUTE_ADVANCE_DISTANCE,
+                    "movement_unavailable", 0.0, "none", "movement_unavailable");
             state.clearActiveGoto();
             gotoStuckReplans = 0;
             resetStuckTracking();
@@ -206,7 +216,10 @@ public class GotoBehavior {
             stopMovement.run();
             request.setStatus(ActionRequest.ActionStatus.COMPLETE);
             state.setLastGotoResult(new GotoResult(target, "success", ""));
-            state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, "none");
+            state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, "none",
+                    progressAgeTicks, recoveryAttempts, lastRecoveryAction, noProgress, lastWaypointDistance,
+                    GOTO_ROUTE_ADVANCE_DISTANCE, lastAdvanceBlockedReason, lastFinalTargetDistance,
+                    "startup_target_distance", "none");
             state.clearActiveGoto();
             state.queueChatMessage("arrived");
             resetRuntimeForInactiveGoto();
@@ -243,7 +256,15 @@ public class GotoBehavior {
         }
 
         activeGoto.setStatus(ActionRequest.ActionStatus.FAILED);
-        state.setLastGotoResult(new GotoResult(activeGoto.gotoTarget(), "failed", reason));
+        if ("goto_cancelled".equals(reason)) {
+            state.setLastGotoResult(new GotoResult(activeGoto.gotoTarget(), "stopped", reason));
+            state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, reason,
+                    progressAgeTicks, recoveryAttempts, lastRecoveryAction, noProgress, lastWaypointDistance,
+                    GOTO_ROUTE_ADVANCE_DISTANCE, lastAdvanceBlockedReason, lastFinalTargetDistance,
+                    "none", reason);
+        } else {
+            state.setLastGotoResult(new GotoResult(activeGoto.gotoTarget(), "failed", reason));
+        }
         resetRuntimeForInactiveGoto();
         lookController.clearNavigationGaze();
         state.clearActiveGoto();
@@ -305,33 +326,40 @@ public class GotoBehavior {
         }
 
         stopMovement.run();
+        lastFailureReason = reason;
         if ("stuck".equals(reason)) {
             state.setLastGotoResult(new GotoResult(target, "stuck", ""));
             state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, "stuck",
                     progressAgeTicks, recoveryAttempts, lastRecoveryAction, noProgress, lastWaypointDistance,
-                    GOTO_ROUTE_ADVANCE_DISTANCE, lastAdvanceBlockedReason, lastFinalTargetDistance);
+                    GOTO_ROUTE_ADVANCE_DISTANCE, lastAdvanceBlockedReason, lastFinalTargetDistance,
+                    "none", "stuck");
         } else {
             state.setLastGotoResult(new GotoResult(target, "failed", reason));
             state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, reason,
                     progressAgeTicks, recoveryAttempts, lastRecoveryAction, noProgress, lastWaypointDistance,
-                    GOTO_ROUTE_ADVANCE_DISTANCE, lastAdvanceBlockedReason, lastFinalTargetDistance);
+                    GOTO_ROUTE_ADVANCE_DISTANCE, lastAdvanceBlockedReason, lastFinalTargetDistance,
+                    "none", reason);
         }
+        state.queueChatMessage("goto failed");
         state.clearActiveGoto();
         resetRuntimeForInactiveGoto();
         lookController.clearNavigationGaze();
     }
 
-    private void completeGoto(GotoTarget target, Runnable stopMovement) {
+    private void completeGoto(GotoTarget target, String completionReason, Runnable stopMovement) {
         stopMovement.run();
 
         if (activeGoto != null) {
             activeGoto.setStatus(ActionRequest.ActionStatus.COMPLETE);
         }
 
+        lastCompletionReason = completionReason;
+        lastFailureReason = "none";
         state.setLastGotoResult(new GotoResult(target, "success", ""));
         state.setLastGotoDiagnostics(segmentedGoto, activeSegmentTarget, gotoSegmentIndex, "none",
                 progressAgeTicks, recoveryAttempts, lastRecoveryAction, noProgress, lastWaypointDistance,
-                GOTO_ROUTE_ADVANCE_DISTANCE, lastAdvanceBlockedReason, lastFinalTargetDistance);
+                GOTO_ROUTE_ADVANCE_DISTANCE, lastAdvanceBlockedReason, lastFinalTargetDistance,
+                completionReason, "none");
         state.clearActiveGoto();
         state.queueChatMessage("arrived");
         resetRuntimeForInactiveGoto();
@@ -540,7 +568,8 @@ public class GotoBehavior {
                 gotoStuckReplans, movementRecovery.gotoStuckTicks(), segmentedGoto, activeSegmentTarget,
                 gotoSegmentIndex, lastSegmentFailureReason, progressAgeTicks, recoveryAttempts,
                 lastRecoveryAction, noProgress, lastWaypointDistance, GOTO_ROUTE_ADVANCE_DISTANCE,
-                lastAdvanceBlockedReason, lastFinalTargetDistance);
+                lastAdvanceBlockedReason, lastFinalTargetDistance, lastCompletionReason, lastFailureReason);
+        state.setActiveAction(ActionRequest.ActionType.GOTO_COORDINATES.name());
     }
 
     private void resetRuntimeForNewGoto(ClientPlayerEntity player) {
@@ -579,6 +608,9 @@ public class GotoBehavior {
         lastWaypointDistance = 0.0;
         lastFinalTargetDistance = 0.0;
         lastAdvanceBlockedReason = "none";
+        lastCompletionReason = "none";
+        lastFailureReason = "none";
+        state.clearActiveAction();
     }
 
     private void resetSegmentState() {
@@ -825,6 +857,18 @@ public class GotoBehavior {
 
         return horizontalDistance(player, waypoint) <= GOTO_WAYPOINT_RECOVERY_DISTANCE
                 && Math.abs(player.getY() - waypoint.getY()) <= GOTO_WAYPOINT_RECOVERY_VERTICAL_DISTANCE;
+    }
+
+    private boolean routeEndReached(ClientPlayerEntity player, GotoTarget target) {
+        if (activeGotoRoute.isEmpty() || activeGotoRouteIndex < activeGotoRoute.size() - 1) {
+            return false;
+        }
+
+        BlockPos waypoint = activeGotoRoute.get(activeGotoRouteIndex);
+        double verticalDifference = Math.abs(player.getY() - target.y());
+        return waypointReached(player, waypoint, true)
+                && lastFinalTargetDistance <= GOTO_WAYPOINT_RECOVERY_DISTANCE
+                && verticalDifference <= GOTO_WAYPOINT_RECOVERY_VERTICAL_DISTANCE;
     }
 
     private void updateRouteAdvanceDiagnostics(ClientPlayerEntity player, List<BlockPos> route, int routeIndex) {
